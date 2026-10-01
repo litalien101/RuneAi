@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FixedStepRunner, NetworkSimulator, acknowledgeInputs, integrateMovement, walkablePosition } from './network.js';
+import { FixedStepRunner, NetworkSimulator, SnapshotBuffer, acknowledgeInputs, integrateMovement, walkablePosition } from './network.js';
 import { InputManager } from './input/input_manager.js';
 import { ThirdPersonCamera } from './camera/third_person_camera.js';
 
@@ -62,6 +62,7 @@ const world = new THREE.Group();
 scene.add(world);
 const player = makeCharacter('player');
 const otherTravelers = new Map();
+const REMOTE_INTERPOLATION_DELAY_MS = 110;
 const mara = makeCharacter('npc');
 const mossling = makeMossling();
 const mosslingRest = makeMosslingRest();
@@ -100,6 +101,7 @@ let clickDestination = null;
 let lastSentInput = { x: 0, z: 0, run: false };
 let nextInputAt = 0;
 let nextSnapshotPollAt = 0;
+let snapshotPollPending = false;
 let walkWeight = 0;
 let runWeight = 0;
 let lastFrameTime = 0;
@@ -378,14 +380,18 @@ function applyState(state) {
   for(const traveler of state.players||[]){
     if(traveler.is_self)continue;
     remoteIds.add(traveler.id);
-    let avatar=otherTravelers.get(traveler.id);
-    if(!avatar){
-      avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
-      avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);otherTravelers.set(traveler.id,avatar);
+    let remote=otherTravelers.get(traveler.id);
+    const receivedAt=performance.now();
+    if(!remote){
+      const avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
+      avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);
+      remote={avatar,snapshots:new SnapshotBuffer(24),latest:{x:traveler.x,z:traveler.y}};
+      otherTravelers.set(traveler.id,remote);
     }
-    avatar.userData.targetX=traveler.x;avatar.userData.targetZ=traveler.y;
+    remote.latest={x:traveler.x,z:traveler.y};
+    remote.snapshots.add({time:receivedAt,x:traveler.x,z:traveler.y});
   }
-  for(const [id,avatar] of otherTravelers)if(!remoteIds.has(id)){world.remove(avatar);otherTravelers.delete(id);}
+  for(const [id,remote] of otherTravelers)if(!remoteIds.has(id)){world.remove(remote.avatar);otherTravelers.delete(id);}
   if(state.active_player)$('#region-label').textContent=`${state.active_player.name.toUpperCase()} · LOCAL WORLD`;
   const authoritativeVelocity=state.velocity||{x:0,z:0};
   player.userData.targetX=state.player.x;player.userData.targetZ=state.player.y;
@@ -717,7 +723,10 @@ function animate(time){
     player.position.x=previousPredictedPosition.x+(predictedPosition.x-previousPredictedPosition.x)*renderAlpha+positionCorrection.x;
     player.position.z=previousPredictedPosition.z+(predictedPosition.z-previousPredictedPosition.z)*renderAlpha+positionCorrection.z;
     tickMovement(time);
-    if(!busy&&time>=nextSnapshotPollAt){nextSnapshotPollAt=time+450;refresh().catch(()=>{});}
+    if(!busy&&!snapshotPollPending&&time>=nextSnapshotPollAt){
+      nextSnapshotPollAt=time+100;snapshotPollPending=true;
+      refresh().catch(()=>{}).finally(()=>{snapshotPollPending=false;});
+    }
     const speed=Math.hypot(predictedVelocity.x,predictedVelocity.z);
     const yawDifference=Math.atan2(Math.sin(targetPlayerYaw-player.rotation.y),Math.cos(targetPlayerYaw-player.rotation.y));
     player.rotation.y+=yawDifference*(1-Math.exp(-12*delta));
@@ -750,11 +759,11 @@ function animate(time){
     if(mosslingRest.visible)mosslingRest.userData.seed.rotation.y=time*.0007;
   }
   if(!game)skyDome.position.copy(camera.position);
-  for(const avatar of otherTravelers.values()){
-    const targetX=avatar.userData.targetX??avatar.position.x,targetZ=avatar.userData.targetZ??avatar.position.z;
-    avatar.position.x+=(targetX-avatar.position.x)*(1-Math.exp(-9*frameDelta));
-    avatar.position.z+=(targetZ-avatar.position.z)*(1-Math.exp(-9*frameDelta));
-    avatar.position.y=.008*Math.sin(time*.002+targetX);
+  const remoteRenderTime=performance.now()-REMOTE_INTERPOLATION_DELAY_MS;
+  for(const remote of otherTravelers.values()){
+    const sample=remote.snapshots.at(remoteRenderTime)||remote.latest;
+    remote.avatar.position.x=sample.x;remote.avatar.position.z=sample.z;
+    remote.avatar.position.y=.008*Math.sin(time*.002+sample.x);
   }
   renderer.render(scene,camera);
 }
