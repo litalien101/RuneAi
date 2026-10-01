@@ -21,6 +21,7 @@ from .world import (
 )
 
 PERSONAL_FIELDS = ("player", "inventory", "player_health", "player_defense", "journal")
+SESSION_IDLE_TTL_SECONDS = 30.0
 
 
 def _split_state(state: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -38,6 +39,7 @@ class WorldStore:
         self._command_lock = RLock()
         self._sessions: dict[str, str] = {}
         self._seat_by_player: dict[str, str] = {}
+        self._session_last_seen: dict[str, float] = {}
         self._runtime: dict[str, dict[str, Any]] = {}
         self._target_history = EntityHistory(max_seconds=2.0, max_samples=120)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -155,19 +157,35 @@ class WorldStore:
     def create_session(self) -> dict[str, str]:
         """Assign the first free local traveler seat to a new browser tab."""
         with self._command_lock:
+            self._expire_sessions(time.monotonic())
             player_id = next((pid for pid in PLAYER_ENTITY_IDS if pid not in self._seat_by_player), None)
             if player_id is None:
                 raise SessionCapacityError("Both local traveler seats are in use. Restart the server to release them.")
             token = secrets.token_urlsafe(32)
             self._sessions[token] = player_id
             self._seat_by_player[player_id] = token
+            self._session_last_seen[token] = time.monotonic()
             return {"session_token": token, "player_id": player_id, "player_name": PLAYER_NAMES[player_id]}
 
     def player_for_session(self, token: str | None) -> str | None:
         if not isinstance(token, str):
             return None
         with self._command_lock:
-            return self._sessions.get(token)
+            now = time.monotonic()
+            self._expire_sessions(now)
+            player_id = self._sessions.get(token)
+            if player_id is not None:
+                self._session_last_seen[token] = now
+            return player_id
+
+    def _expire_sessions(self, now: float) -> None:
+        expired = [key for key, seen in self._session_last_seen.items()
+                   if now - seen > SESSION_IDLE_TTL_SECONDS]
+        for key in expired:
+            player_id = self._sessions.pop(key, None)
+            self._session_last_seen.pop(key, None)
+            if player_id is not None and self._seat_by_player.get(player_id) == key:
+                del self._seat_by_player[player_id]
 
     def session_count(self) -> int:
         with self._command_lock:

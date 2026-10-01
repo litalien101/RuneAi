@@ -479,9 +479,34 @@ function showRewindOverlay(detail){
 
 async function refresh(){
   const response=await authenticatedFetch('/api/state',{headers:{'Accept':'application/json'}});
-  if(!response.ok)throw new Error('The valley could not be reached.');
+  if(!response.ok){
+    const payload=await response.json().catch(()=>({}));
+    const error=new Error(payload.error||`The valley could not be reached (${response.status}).`);
+    error.status=response.status;throw error;
+  }
   applyState(await response.json());
 }
+
+function showConnectionError(message){
+  $('#connection-message').textContent=message;
+  $('#connection-overlay').hidden=false;
+  $('#connection-retry').focus();
+}
+async function connectToWorld(){
+  const retry=$('#connection-retry');retry.disabled=true;retry.textContent='Connecting…';
+  try{
+    const response=await authenticatedFetch('/api/state',{headers:{'Accept':'application/json'}});
+    if(!response.ok){const payload=await response.json().catch(()=>({}));throw new Error(payload.error||`World state request failed (${response.status}).`);}
+    const state=await response.json();
+    if(!game)buildLandscape(state);
+    applyState(state);cameraController.snap(player.position);
+    $('#connection-overlay').hidden=true;
+  }catch(error){
+    console.error('Atlas world connection failed:',error);
+    $('#connection-message').textContent=error.message||'The valley could not load. Try again in a moment.';
+  }finally{retry.disabled=false;retry.textContent='Try again';}
+}
+$('#connection-retry').addEventListener('click',connectToWorld);
 
 async function act(action){
   if(busy)return;busy=true;
@@ -725,7 +750,7 @@ function animate(time){
     tickMovement(time);
     if(!busy&&!snapshotPollPending&&time>=nextSnapshotPollAt){
       nextSnapshotPollAt=time+100;snapshotPollPending=true;
-      refresh().catch(()=>{}).finally(()=>{snapshotPollPending=false;});
+      refresh().catch(error=>{if(error.status===409)showConnectionError(error.message);}).finally(()=>{snapshotPollPending=false;});
     }
     const speed=Math.hypot(predictedVelocity.x,predictedVelocity.z);
     const yawDifference=Math.atan2(Math.sin(targetPlayerYaw-player.rotation.y),Math.cos(targetPlayerYaw-player.rotation.y));
@@ -770,5 +795,5 @@ function animate(time){
 
 scene.add(new THREE.AmbientLight('#d8d4bd',.24));
 cameraController.snap(player.position);resize();
-authenticatedFetch('/api/state',{headers:{'Accept':'application/json'}}).then(r=>{if(!r.ok)throw new Error(`World state request failed (${r.status})`);return r.json();}).then(state=>{buildLandscape(state);applyState(state);cameraController.snap(player.position);}).catch(error=>{console.error('Atlas world startup failed:',error);showToast(error.message||'The valley could not load. Check the browser console and restart the local server.');});
+connectToWorld();
 requestAnimationFrame(animate);

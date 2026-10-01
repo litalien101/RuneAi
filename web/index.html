@@ -49,6 +49,9 @@
     <div class="location-readout"><span id="coords">X 03 · Y 10</span></div>
 
     <div class="toast" id="toast" role="status"></div>
+    <section class="connection-overlay" id="connection-overlay" role="alertdialog" aria-modal="true" aria-labelledby="connection-title" hidden>
+      <div><span class="connection-sigil">✦</span><h1 id="connection-title">The valley is waiting</h1><p id="connection-message">Connecting to your traveler...</p><button id="connection-retry" type="button">Try again</button></div>
+    </section>
     <aside class="network-debug" id="network-debug" aria-live="off" hidden></aside>
     <button class="interact-button" id="interact" type="button">E&nbsp; INTERACT</button>
     <section class="combat-actions" id="combat-actions" aria-label="Creature encounter actions" hidden>
