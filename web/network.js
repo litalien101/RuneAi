@@ -94,7 +94,7 @@ export function integrateMovement(position, velocity, input, dt, speed, accelera
   };
 }
 
-export function integrateVerticalMovement(motion, jumpPressed, dt) {
+export function integrateVerticalMovement(motion, jumpPressed, dt, surfaceHeight = 0) {
   let { height = 0, velocity = 0, grounded = true, jumpBuffer = 0, coyoteTime = 0.1 } = motion;
   let remaining = dt;
   if (jumpPressed) jumpBuffer = 0.12;
@@ -112,13 +112,34 @@ export function integrateVerticalMovement(motion, jumpPressed, dt) {
     if (!grounded) {
       velocity -= 16 * step;
       height += velocity * step;
-      if (height <= 0) {
-        height = 0; velocity = 0; grounded = true; coyoteTime = 0.1;
+      if (height <= surfaceHeight) {
+        height = surfaceHeight; velocity = 0; grounded = true; coyoteTime = 0.1;
       }
-    }
+    } else height = surfaceHeight;
     remaining -= step;
   }
   return { height, velocity, grounded, jumpBuffer, coyoteTime };
+}
+
+export const MAX_STEP_UP = 0.28;
+export const LEDGE_DROP = 0.55;
+export const MAX_WALKABLE_GRADE = 0.65;
+
+export function sampleGroundHeight(x, z, features = []) {
+  let height = 0;
+  const slope = features.find(feature => feature.kind === 'slope');
+  if (slope && z >= slope.z_min && z <= slope.z_max) {
+    const progress = Math.max(0, Math.min(1, (x - slope.x_min) / (slope.x_max - slope.x_min)));
+    height = Math.max(height, slope.height * progress);
+  }
+  const ledge = features.find(feature => feature.kind === 'ledge');
+  if (ledge && x >= ledge.x_min && x <= ledge.x_max && z >= ledge.z_min && z <= ledge.z_max) {
+    height = Math.max(height, ledge.height);
+  }
+  if (ledge && x >= ledge.ramp_x_min && x <= ledge.ramp_x_max && z > ledge.z_max && z <= ledge.ramp_z_max) {
+    height = Math.max(height, ledge.height * (ledge.ramp_z_max - z) / (ledge.ramp_z_max - ledge.z_max));
+  }
+  return height;
 }
 
 // Keep footprint sampling identical to atlas_server.world.walkable_position.

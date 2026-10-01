@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 DATA = Path(os.environ.get("ATLAS_DATA_DIR", ROOT / "data"))
 SPECS = ROOT / "specs" / "atlas" / "specs"
-MAX_BODY = 4096
+MAX_BODY = 16384
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "AtlasLocal/0.1"

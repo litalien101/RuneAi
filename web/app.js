@@ -1,7 +1,8 @@
 import * as THREE from 'three';
-import { FixedStepRunner, NetworkSimulator, SnapshotBuffer, acknowledgeInputs, integrateMovement, integrateVerticalMovement, walkablePosition } from './network.js';
+import { FixedStepRunner, NetworkSimulator, SnapshotBuffer, acknowledgeInputs, integrateMovement, integrateVerticalMovement, sampleGroundHeight, MAX_STEP_UP, MAX_WALKABLE_GRADE, LEDGE_DROP, walkablePosition } from './network.js';
 import { InputManager } from './input/input_manager.js';
 import { ThirdPersonCamera } from './camera/third_person_camera.js';
+import { CharacterAnimator } from './animation/character_animator.js';
 
 const canvas = document.querySelector('#world');
 const $ = (selector) => document.querySelector(selector);
@@ -77,6 +78,7 @@ const beacon = makeBeacon();
 world.add(player, mara, mossling.group, mosslingRest, beacon.group);
 
 let game = null;
+let worldSurfaceFeatures = [];
 let busy = false;
 let toastTimer = 0;
 let clickPointer = null;
@@ -106,21 +108,17 @@ let lastSentInput = { x: 0, z: 0, run: false };
 let nextInputAt = 0;
 let nextSnapshotPollAt = 0;
 let snapshotPollPending = false;
-let walkWeight = 0;
-let runWeight = 0;
-let jumpWeight = 0;
 let landingImpact = 0;
 let landingTime = 0;
 let lastFrameTime = 0;
 let targetPlayerYaw = 0;
-let gaitPhase = 0;
 let audioContext = null;
 let ambientBus = null;
 let ambientEnabled = true;
 let birdCallTimer = null;
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let terrainMesh = null;
 
 function material(color, roughness = 0.86, extra = {}) {
   return new THREE.MeshStandardMaterial({ color, roughness, ...extra });
@@ -142,6 +140,7 @@ function seeded(x, y, salt = 0) {
 }
 
 function buildLandscape(state) {
+  worldSurfaceFeatures = state.surface_features || [];
   const treeObstacles=new Map((state.obstacles||[]).filter(obstacle=>obstacle.kind==='tree').map(obstacle=>[`${obstacle.x},${obstacle.z}`,obstacle]));
   const sea = addMesh(world, new THREE.PlaneGeometry(100, 100), material('#416a6b', 0.3, { metalness: 0.12 }), [9.5, -0.48, 6.5], { castShadow: false });
   sea.rotation.x = -Math.PI / 2;
@@ -157,7 +156,7 @@ function buildLandscape(state) {
     }
   }
   const route = [[2,10],[4,9],[6,9],[7,8],[8,7],[10,7],[11,6],[12,6],[13,5],[15,4]];
-  const curve = new THREE.CatmullRomCurve3(route.map(([x,z]) => new THREE.Vector3(x, 0.045, z)));
+  const curve = new THREE.CatmullRomCurve3(route.map(([x,z]) => new THREE.Vector3(x, sampleGroundHeight(x,z,state.surface_features)+.045, z)));
   const path = addMesh(world, new THREE.TubeGeometry(curve, 120, 0.23, 9, false), material('#988768',.94), [0,0,0], { castShadow: false });
   path.receiveShadow = true;
   addFlowerPatch(3, 3, '#dcae78');
@@ -170,7 +169,10 @@ function buildGround(state) {
   for(let z=0;z<state.height;z++)for(let x=0;x<state.width;x++){
     if(state.terrain[z][x]==='~')continue;
     const base=vertices.length/3;
-    vertices.push(x-.5,0,z-.5,x+.5,0,z-.5,x+.5,0,z+.5,x-.5,0,z+.5);
+    vertices.push(x-.5,sampleGroundHeight(x-.5,z-.5,state.surface_features),z-.5,
+      x+.5,sampleGroundHeight(x+.5,z-.5,state.surface_features),z-.5,
+      x+.5,sampleGroundHeight(x+.5,z+.5,state.surface_features),z+.5,
+      x-.5,sampleGroundHeight(x-.5,z+.5,state.surface_features),z+.5);
     uvs.push(x/state.width,1-z/state.height,(x+1)/state.width,1-z/state.height,
       (x+1)/state.width,1-(z+1)/state.height,x/state.width,1-(z+1)/state.height);
     indices.push(base,base+2,base+1,base,base+3,base+2);
@@ -208,6 +210,7 @@ function buildGround(state) {
   const bumpTexture=new THREE.CanvasTexture(canvas);bumpTexture.anisotropy=renderer.capabilities.getMaxAnisotropy();
   const ground=addMesh(world,geometry,new THREE.MeshStandardMaterial({map:colorTexture,bumpMap:bumpTexture,bumpScale:.018,roughness:.96}),[0,.012,0],{castShadow:false,receiveShadow:true});
   ground.name='procedural valley ground';
+  terrainMesh=ground;
 }
 
 function isPathCell(x, y) {
@@ -216,7 +219,7 @@ function isPathCell(x, y) {
 }
 function addTree(x, z, seed, scale = 0.75 + seed * 0.52) {
   const group = new THREE.Group();
-  group.position.set(x, 0, z);
+  group.position.set(x, sampleGroundHeight(x,z,worldSurfaceFeatures), z);
   addMesh(group, new THREE.CylinderGeometry(0.09, 0.16, 0.78, 12, 2), material('#72583e'), [0, 0.38, 0]);
   const green = ['#315849','#3b624d','#446c4f'][Math.floor(seed * 3)];
   if (seed > 0.69) {
@@ -235,7 +238,7 @@ function addTree(x, z, seed, scale = 0.75 + seed * 0.52) {
 
 function addGrassTuft(x, z, seed) {
   const group = new THREE.Group();
-  group.position.set(x, 0.04, z);
+  group.position.set(x, sampleGroundHeight(x,z,worldSurfaceFeatures)+.04, z);
   const green = material(seed > .5 ? '#71875c' : '#809167');
   for (let i=0;i<3;i++) {
     const blade = addMesh(group, new THREE.ConeGeometry(.045, .29 + seeded(x,z,i)*.12, 4), green,
@@ -266,16 +269,18 @@ function makeCharacter(kind) {
   const robeLight = material(isPlayer ? (isSecondPlayer ? '#a18ab2' : '#628f8d') : '#c5945d');
   const dark = material('#3b4037');
   const skin = material(isPlayer ? (isSecondPlayer ? '#cda88c' : '#d8b58e') : '#dfbd8a');
-  const mantle = addMesh(group, new THREE.CylinderGeometry(.21,.31,.57,16,3), robe, [0,.61,0]);
+  const pelvis=new THREE.Bone();pelvis.name='Pelvis';pelvis.position.y=.32;group.add(pelvis);
+  const spine=new THREE.Bone();spine.name='Spine';spine.position.y=.18;pelvis.add(spine);
+  const mantle = addMesh(spine,new THREE.CylinderGeometry(.21,.31,.57,16,3),robe,[0,.11,0]);
   mantle.scale.z=.82;
-  addMesh(group, new THREE.SphereGeometry(.205,18,14), skin, [0,1.03,0]);
-  addMesh(group, new THREE.ConeGeometry(.245,.32,12,2), robeLight, [0,1.25,0]);
-  const legL=new THREE.Group();legL.position.set(-.095,.39,0);group.add(legL);
-  const legR=new THREE.Group();legR.position.set(.095,.39,0);group.add(legR);
+  addMesh(spine,new THREE.SphereGeometry(.205,18,14),skin,[0,.53,0]);
+  addMesh(spine,new THREE.ConeGeometry(.245,.32,12,2),robeLight,[0,.75,0]);
+  const legL=new THREE.Bone();legL.name='LeftLeg';legL.position.set(-.095,.07,0);pelvis.add(legL);
+  const legR=new THREE.Bone();legR.name='RightLeg';legR.position.set(.095,.07,0);pelvis.add(legR);
   addMesh(legL,new THREE.CylinderGeometry(.055,.065,.39,10,2),dark,[0,-.195,0]);
   addMesh(legR,new THREE.CylinderGeometry(.055,.065,.39,10,2),dark,[0,-.195,0]);
-  const armL=new THREE.Group();armL.position.set(isPlayer?-.25:-.22,.79,0);armL.rotation.z=-.27;group.add(armL);
-  const armR=new THREE.Group();armR.position.set(isPlayer?.25:.22,.79,0);armR.rotation.z=.27;group.add(armR);
+  const armL=new THREE.Bone();armL.name='LeftArm';armL.position.set(isPlayer?-.25:-.22,.29,0);armL.rotation.z=-.27;spine.add(armL);
+  const armR=new THREE.Bone();armR.name='RightArm';armR.position.set(isPlayer?.25:.22,.29,0);armR.rotation.z=.27;spine.add(armR);
   addMesh(armL,new THREE.CylinderGeometry(.055,.075,.39,10,2),robe,[0,-.195,0]);
   addMesh(armR,new THREE.CylinderGeometry(.055,.075,.39,10,2),robe,[0,-.195,0]);
   if (isPlayer) {
@@ -292,12 +297,13 @@ function makeCharacter(kind) {
   }
   group.userData.nameplate=makeNameplate(isPlayer?(isSecondPlayer?'PATHFINDER':'WAYFARER'):'MARA',isPlayer?(isSecondPlayer?'#e3c7f2':'#d3e1cb'):'#e7c78b',isPlayer?1.67:1.74);
   group.add(group.userData.nameplate);
-  group.userData.parts={mantle,armL,armR,legL,legR};
+  group.userData.parts={mantle,armL,armR,legL,legR,pelvis,spine};
+  group.userData.animator=new CharacterAnimator(group,{pelvis,spine,armL,armR,legL,legR});
   return group;
 }
 
 function makeMossling(){
-  const group=new THREE.Group();group.position.set(12,0,9);
+  const group=new THREE.Group();group.position.set(12,sampleGroundHeight(12,9,worldSurfaceFeatures),9);
   const moss=material('#526c52'),mossLight=material('#789064'),stone=material('#59645a');
   const body=addMesh(group,new THREE.DodecahedronGeometry(.43,2),moss,[0,.72,0]);body.scale.set(1,.9,.8);
   addMesh(group,new THREE.IcosahedronGeometry(.31,2),mossLight,[0,1.18,.02]);
@@ -315,7 +321,7 @@ function makeMossling(){
 }
 
 function makeMosslingRest(){
-  const group=new THREE.Group();group.position.set(12,0,9);group.visible=false;
+  const group=new THREE.Group();group.position.set(12,sampleGroundHeight(12,9,worldSurfaceFeatures),9);group.visible=false;
   addMesh(group,new THREE.CylinderGeometry(.43,.52,.15,8),material('#514f43'),[0,.075,0],{castShadow:false});
   const seed=addMesh(group,new THREE.DodecahedronGeometry(.2,1),material('#87906b',.48,{emissive:'#677747',emissiveIntensity:.45}),[0,.29,0],{castShadow:false});
   const glow=new THREE.PointLight('#a6bc71',.45,2.6,2);glow.position.set(0,.34,0);group.add(glow);
@@ -336,7 +342,7 @@ function makeNameplate(label,color,y){
 
 function makeBeacon() {
   const group=new THREE.Group();
-  group.position.set(15,0,4);
+  group.position.set(15,sampleGroundHeight(15,4,worldSurfaceFeatures),4);
   const stone=material('#777d70'),stoneLight=material('#a29d7a');
   addMesh(group,new THREE.CylinderGeometry(.57,.68,.24,20,2),stone,[0,.12,0]);
   addMesh(group,new THREE.CylinderGeometry(.43,.53,1.6,20,3),stone,[0,1.0,0]);
@@ -352,7 +358,7 @@ function makeBeacon() {
 }
 
 function makeReed(reed) {
-  const group=new THREE.Group();group.position.set(reed.x,0,reed.y);
+  const group=new THREE.Group();group.position.set(reed.x,sampleGroundHeight(reed.x,reed.y,worldSurfaceFeatures),reed.y);
   const leaves=[];
   const stemMat=material('#7fb88d',.44,{emissive:'#4ca778',emissiveIntensity:.18});
   for(let i=0;i<4;i++){
@@ -392,7 +398,7 @@ function applyState(state) {
     if(!remote){
       const avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
       avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);
-      remote={avatar,snapshots:new SnapshotBuffer(24),lastTick:-1,gaitPhase:0,walkWeight:0,runWeight:0,jumpWeight:0,
+      remote={avatar,snapshots:new SnapshotBuffer(24),lastTick:-1,
         landingImpact:0,landingTime:0,lastGrounded:traveler.grounded!==false,
         latest:{x:traveler.x,z:traveler.y,height:traveler.height||0}};
       otherTravelers.set(traveler.id,remote);
@@ -414,7 +420,7 @@ function applyState(state) {
     predictedVelocity.x=authoritativeVelocity.x;predictedVelocity.z=authoritativeVelocity.z;
     movementSequence=state.last_processed_input||0;
     acknowledgedSequence=movementSequence;
-    player.position.set(state.player.x,0,state.player.y);
+    player.position.set(state.player.x,state.player.height||0,state.player.y);
     predictedPosition.x=previousPredictedPosition.x=state.player.x;
     predictedPosition.z=previousPredictedPosition.z=state.player.y;
     verticalMotion={height:state.player.height||0,velocity:state.player.vertical_velocity||0,
@@ -431,7 +437,7 @@ function applyState(state) {
     if(Math.hypot(vx,vz)>.08)targetPlayerYaw=Math.atan2(vx,vz);
     else if(oldPlayer&&(oldPlayer.x!==state.player.x||oldPlayer.y!==state.player.y))targetPlayerYaw=Math.atan2(state.player.x-oldPlayer.x,state.player.y-oldPlayer.y);
   }
-  mara.position.set(state.mara.x,0,state.mara.y);
+  mara.position.set(state.mara.x,sampleGroundHeight(state.mara.x,state.mara.y,state.surface_features),state.mara.y);
   mossling.group.visible=!state.mossling.defeated;
   mosslingRest.visible=state.mossling.defeated;
   mossling.healthFill.scale.x=Math.max(.001,state.mossling.health/state.mossling.max_health);
@@ -691,13 +697,25 @@ function tickMovement(time){
 function simulateMovementFrame(input,run,dt,jumpPressed=false){
   const speed=run?4.2:2.5;
   const step=integrateMovement(predictedPosition,predictedVelocity,input,dt,speed);
-  if(walkableAt(step.position.x,predictedPosition.z)){
+  const canTraverse=(x,z)=>{
+    if(!verticalMotion.grounded)return true;
+    const rise=sampleGroundHeight(x,z,game.surface_features)-sampleGroundHeight(predictedPosition.x,predictedPosition.z,game.surface_features);
+    const distance=Math.hypot(x-predictedPosition.x,z-predictedPosition.z);
+    return rise<=MAX_STEP_UP&&(rise<=0||rise/Math.max(distance,1e-6)<=MAX_WALKABLE_GRADE);
+  };
+  if(canTraverse(step.position.x,predictedPosition.z)&&walkableAt(step.position.x,predictedPosition.z)){
+    const from=sampleGroundHeight(predictedPosition.x,predictedPosition.z,game.surface_features),to=sampleGroundHeight(step.position.x,predictedPosition.z,game.surface_features);
     predictedPosition.x=step.position.x;predictedVelocity.x=step.velocity.x;
+    if(verticalMotion.grounded&&from-to>LEDGE_DROP)verticalMotion.grounded=false;
+    else if(verticalMotion.grounded)verticalMotion.height=to;
   }else predictedVelocity.x=0;
-  if(walkableAt(predictedPosition.x,step.position.z)){
+  if(canTraverse(predictedPosition.x,step.position.z)&&walkableAt(predictedPosition.x,step.position.z)){
+    const from=sampleGroundHeight(predictedPosition.x,predictedPosition.z,game.surface_features),to=sampleGroundHeight(predictedPosition.x,step.position.z,game.surface_features);
     predictedPosition.z=step.position.z;predictedVelocity.z=step.velocity.z;
+    if(verticalMotion.grounded&&from-to>LEDGE_DROP)verticalMotion.grounded=false;
+    else if(verticalMotion.grounded)verticalMotion.height=to;
   }else predictedVelocity.z=0;
-  verticalMotion=integrateVerticalMovement(verticalMotion,jumpPressed,dt);
+  verticalMotion=integrateVerticalMovement(verticalMotion,jumpPressed,dt,sampleGroundHeight(predictedPosition.x,predictedPosition.z,game.surface_features));
 }
 function updateNetworkHud(time){
   if(time-lastNetworkHudAt<150)return;lastNetworkHudAt=time;
@@ -751,8 +769,8 @@ canvas.addEventListener('pointerup',event=>{
   if(event.button!==0)return;
   const click=clickPointer;clickPointer=null;if(!click||click.id!==event.pointerId||Math.hypot(event.clientX-click.x,event.clientY-click.y)>5||!game)return;
   pointer.x=(event.clientX/canvas.clientWidth)*2-1;pointer.y=-(event.clientY/canvas.clientHeight)*2+1;
-  raycaster.setFromCamera(pointer,camera);const hit=new THREE.Vector3();
-  if(raycaster.ray.intersectPlane(groundPlane,hit)){
+  raycaster.setFromCamera(pointer,camera);const hit=terrainMesh?raycaster.intersectObject(terrainMesh)[0]?.point:new THREE.Vector3();
+  if(hit){
     clickDestination={x:THREE.MathUtils.clamp(hit.x,.3,18.7),z:THREE.MathUtils.clamp(hit.z,.3,12.7)};
   }
 });
@@ -790,23 +808,11 @@ function animate(time){
     player.userData.locomotionState=state;
     const yawDifference=Math.atan2(Math.sin(targetPlayerYaw-player.rotation.y),Math.cos(targetPlayerYaw-player.rotation.y));
     player.rotation.y+=yawDifference*(1-Math.exp(-12*delta));
-    const targetWalk=state==='walk'||state==='run'?1:0,targetRun=state==='run'?1:0;
-    walkWeight+=(targetWalk-walkWeight)*(1-Math.exp(-10*delta));
-    runWeight+=(targetRun-runWeight)*(1-Math.exp(-8*delta));
-    const moving=walkWeight>.025;
-    gaitPhase+=speed/(1.28+.38*runWeight)*Math.PI*2*delta;
-    const gait=moving?Math.sin(gaitPhase):0;
-    const playerParts=player.userData.parts;
-    const inAir=state==='jump'||state==='fall';
-    jumpWeight+=((inAir?1:0)-jumpWeight)*(1-Math.exp(-(inAir?12:16)*delta));
-    const jumpLeg=state==='fall'?.2:-.42,fallArm=state==='fall'?.38:-1.0;
-    playerParts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*walkWeight,jumpLeg,jumpWeight);
-    playerParts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*walkWeight,.28,jumpWeight);
-    playerParts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*walkWeight,fallArm,jumpWeight);
-    playerParts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*walkWeight,fallArm,jumpWeight);
+    player.userData.animator.setState(state,speed,landingImpact);
+    player.userData.animator.update(delta);
     const squash=landingImpact*.08;
     player.scale.set(1+squash*.45,1-squash,1+squash*.45);
-    player.position.y=verticalMotion.height+verticalCorrection+(moving&&verticalMotion.grounded?Math.abs(gait)*(.025+.025*runWeight)*walkWeight:0);
+    player.position.y=verticalMotion.height+verticalCorrection;
     cameraController.update(delta,player.position,inputManager.cameraIntent(),game.obstacles);
     skyDome.position.copy(camera.position);
     for(const foliage of foliageModels){
@@ -814,7 +820,7 @@ function animate(time){
       if(foliage.userData.kind==='tree'){foliage.rotation.z=sway;foliage.rotation.x=sway*.55;}
       else foliage.rotation.z=(foliage.userData.baseRotation||0)+sway;
     }
-    const maraParts=mara.userData.parts;maraParts.mantle.position.y=.61+Math.sin(time*.0018+1)*.018;
+    const maraParts=mara.userData.parts;maraParts.mantle.position.y=.11+Math.sin(time*.0018+1)*.018;
     const pulse=1+Math.sin(time*.003)*.055;
     beacon.ring.scale.setScalar(pulse);beacon.ring.rotation.y=time*.00035;
     for(const model of reedModels.values())if(model.group.visible){
@@ -837,18 +843,8 @@ function animate(time){
     const state=locomotionState(speed,sample.grounded!==false,sample.vertical_velocity||0,remote.landingTime);
     remote.avatar.userData.locomotionState=state;
     if(speed>.08){const yaw=Math.atan2(sample.vx,sample.vz);const difference=Math.atan2(Math.sin(yaw-remote.avatar.rotation.y),Math.cos(yaw-remote.avatar.rotation.y));remote.avatar.rotation.y+=difference*(1-Math.exp(-12*frameDelta));}
-    remote.walkWeight+=((state==='walk'||state==='run'?1:0)-remote.walkWeight)*(1-Math.exp(-10*frameDelta));
-    const running=state==='run';
-    remote.runWeight+=((running?1:0)-remote.runWeight)*(1-Math.exp(-8*frameDelta));
-    const inAir=state==='jump'||state==='fall';
-    remote.jumpWeight+=((inAir?1:0)-remote.jumpWeight)*(1-Math.exp(-(inAir?12:16)*frameDelta));
-    remote.gaitPhase+=speed/(1.28+.38*remote.runWeight)*Math.PI*2*frameDelta;
-    const gait=remote.walkWeight>.025?Math.sin(remote.gaitPhase):0,parts=remote.avatar.userData.parts;
-    const jumpLeg=state==='fall'?0.2:-0.42,fallArm=state==='fall'?0.38:-1.0;
-    parts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*remote.walkWeight,jumpLeg,remote.jumpWeight);
-    parts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*remote.walkWeight,.28,remote.jumpWeight);
-    parts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*remote.walkWeight,fallArm,remote.jumpWeight);
-    parts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*remote.walkWeight,fallArm,remote.jumpWeight);
+    remote.avatar.userData.animator.setState(state,speed,remote.landingImpact);
+    remote.avatar.userData.animator.update(frameDelta);
     const squash=remote.landingImpact*.08;
     remote.avatar.scale.set(1+squash*.45,1-squash,1+squash*.45);
   }

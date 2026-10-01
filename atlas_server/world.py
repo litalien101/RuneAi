@@ -13,6 +13,9 @@ JUMP_SPEED = 5.2
 JUMP_GRAVITY = 16.0
 JUMP_BUFFER_SECONDS = 0.12
 COYOTE_SECONDS = 0.10
+MAX_STEP_UP = 0.28
+MAX_WALKABLE_GRADE = 0.65
+LEDGE_DROP = 0.55
 PLAYER_ENTITY_ID = "9163de5b-b156-5d5e-bb43-f371650c4998"
 SECOND_PLAYER_ENTITY_ID = "70968bb0-4c0a-52ad-94ea-3f4f6f1368b2"
 PLAYER_ENTITY_IDS = (PLAYER_ENTITY_ID, SECOND_PLAYER_ENTITY_ID)
@@ -121,6 +124,30 @@ def _world_obstacles() -> list[dict[str, Any]]:
 
 WORLD_OBSTACLES = _world_obstacles()
 
+# Two low, climbable slopes and a raised shelf with a ramp on its south side.
+# Heights are world units and use the same piecewise rules in web/network.js.
+SURFACE_FEATURES = (
+    {"kind": "slope", "x_min": 7.0, "x_max": 11.0, "z_min": 1.0, "z_max": 5.0, "height": 0.72},
+    {"kind": "ledge", "x_min": 14.0, "x_max": 17.0, "z_min": 7.0, "z_max": 10.0,
+     "ramp_x_min": 15.0, "ramp_x_max": 16.0, "ramp_z_max": 12.0, "height": 0.9},
+)
+
+
+def ground_height(x: float, z: float) -> float:
+    """Height of the walkable surface at a world position."""
+    height = 0.0
+    slope = SURFACE_FEATURES[0]
+    if slope["z_min"] <= z <= slope["z_max"]:
+        progress = min(1.0, max(0.0, (x - slope["x_min"]) / (slope["x_max"] - slope["x_min"])))
+        height = max(height, slope["height"] * progress)
+    ledge = SURFACE_FEATURES[1]
+    if ledge["x_min"] <= x <= ledge["x_max"] and ledge["z_min"] <= z <= ledge["z_max"]:
+        height = max(height, ledge["height"])
+    if ledge["ramp_x_min"] <= x <= ledge["ramp_x_max"] and ledge["z_max"] < z <= ledge["ramp_z_max"]:
+        progress = (ledge["ramp_z_max"] - z) / (ledge["ramp_z_max"] - ledge["z_max"])
+        height = max(height, ledge["height"] * progress)
+    return height
+
 def initial_state() -> dict[str, Any]:
     return {
         "player": {"x": float(START[0]), "y": float(START[1]), "vx": 0.0, "vz": 0.0,
@@ -178,6 +205,7 @@ def public_state(state: dict[str, Any], events: list[dict[str, Any]]) -> dict[st
         "height": HEIGHT,
         "terrain": TERRAIN,
         "obstacles": WORLD_OBSTACLES,
+        "surface_features": SURFACE_FEATURES,
         "player": {"x": state["player"]["x"], "y": state["player"]["y"],
                    "height": state["player"].get("height", 0.0),
                    "vertical_velocity": state["player"].get("vy", 0.0),
@@ -223,6 +251,8 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
         braking = hypot(target_vx, target_vz) < 1e-6
         rate = 28.0 if braking else 11.0
         old_vx, old_vz = player.get("vx", 0.0), player.get("vz", 0.0)
+        grounded = player["grounded"]
+        height = player["height"]
         remaining = dt
         vx, vz = old_vx, old_vz
         obstacles = action.get("_obstacles")
@@ -234,20 +264,35 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             displacement_x = target_vx * step + (vx - target_vx) * (1 - decay) / rate
             displacement_z = target_vz * step + (vz - target_vz) * (1 - decay) / rate
             next_x, next_z = player["x"] + displacement_x, player["y"] + displacement_z
-            if walkable_position(next_x, player["y"], obstacles=obstacles):
+            old_ground = ground_height(player["x"], player["y"])
+            next_ground = ground_height(next_x, player["y"])
+            rise = next_ground - old_ground
+            grade = rise / max(abs(displacement_x), 1e-6)
+            if (not grounded or (rise <= MAX_STEP_UP and (rise <= 0 or grade <= MAX_WALKABLE_GRADE))) and walkable_position(next_x, player["y"], obstacles=obstacles):
                 player["x"] = next_x
                 vx = next_vx
+                if grounded and old_ground - next_ground > LEDGE_DROP:
+                    grounded = False
+                elif grounded:
+                    height = next_ground
             else:
                 vx = 0.0
-            if walkable_position(player["x"], next_z, obstacles=obstacles):
+            old_ground = ground_height(player["x"], player["y"])
+            next_ground = ground_height(player["x"], next_z)
+            rise = next_ground - old_ground
+            grade = rise / max(abs(displacement_z), 1e-6)
+            if (not grounded or (rise <= MAX_STEP_UP and (rise <= 0 or grade <= MAX_WALKABLE_GRADE))) and walkable_position(player["x"], next_z, obstacles=obstacles):
                 player["y"] = next_z
                 vz = next_vz
+                if grounded and old_ground - next_ground > LEDGE_DROP:
+                    grounded = False
+                elif grounded:
+                    height = next_ground
             else:
                 vz = 0.0
             remaining -= step
         remaining = dt
-        height, vy = player["height"], player["vy"]
-        grounded = player["grounded"]
+        vy = player["vy"]
         jump_buffer = JUMP_BUFFER_SECONDS if jump_pressed else player["jump_buffer"]
         coyote_time = player["coyote_time"]
         while remaining > 1e-9:
@@ -262,12 +307,15 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
                 jump_buffer = 0.0
                 coyote_time = 0.0
             jump_buffer = max(0.0, jump_buffer - step)
+            surface = ground_height(player["x"], player["y"])
             if not grounded:
                 vy -= JUMP_GRAVITY * step
                 height += vy * step
-                if height <= 0.0:
-                    height, vy, grounded = 0.0, 0.0, True
+                if height <= surface:
+                    height, vy, grounded = surface, 0.0, True
                     coyote_time = COYOTE_SECONDS
+            else:
+                height = surface
             remaining -= step
         player.update(height=height, vy=vy, grounded=grounded,
                       jump_buffer=jump_buffer, coyote_time=coyote_time)
