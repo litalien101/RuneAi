@@ -168,7 +168,10 @@ export class SnapshotBuffer {
     if (this.items.length > this.limit) this.items.splice(0, this.items.length - this.limit);
   }
   at(time) {
-    if (this.items.length === 1) return { x: this.items[0].x, z: this.items[0].z };
+    if (!this.items.length) return null;
+    if (this.items.length === 1 || time <= this.items[0].time) {
+      return { x: this.items[0].x, z: this.items[0].z };
+    }
     for (let i = 0; i < this.items.length - 1; i++) {
       const older = this.items[i], newer = this.items[i + 1];
       if (older.time <= time && time <= newer.time) {
@@ -177,6 +180,23 @@ export class SnapshotBuffer {
         return { x: older.x + (newer.x - older.x) * alpha, z: older.z + (newer.z - older.z) * alpha };
       }
     }
-    return null;
+    // A short, speed-limited extrapolation hides small delivery gaps. Holding the
+    // last sample after that avoids predicting through walls during longer stalls.
+    const latest = this.items.at(-1);
+    if (this.items.length < 2 || time <= latest.time) return { x: latest.x, z: latest.z };
+    const previous = this.items.at(-2);
+    const span = latest.time - previous.time;
+    if (span <= 0) return { x: latest.x, z: latest.z };
+    const elapsed = Math.min(time - latest.time, 100);
+    const scale = elapsed / span;
+    let vx = (latest.x - previous.x) * scale;
+    let vz = (latest.z - previous.z) * scale;
+    const distance = Math.hypot(vx, vz);
+    const maximumDistance = 4.5 * elapsed / 1000;
+    if (distance > maximumDistance && distance > 0) {
+      vx *= maximumDistance / distance;
+      vz *= maximumDistance / distance;
+    }
+    return { x: latest.x + vx, z: latest.z + vz };
   }
 }

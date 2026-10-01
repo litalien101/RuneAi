@@ -62,7 +62,9 @@ const world = new THREE.Group();
 scene.add(world);
 const player = makeCharacter('player');
 const otherTravelers = new Map();
-const REMOTE_INTERPOLATION_DELAY_MS = 110;
+// Keep roughly 2.5 remote snapshots buffered to absorb browser/server timing jitter.
+// This delay applies only to other travelers; local movement remains predicted.
+const REMOTE_INTERPOLATION_DELAY_MS = 260;
 const mara = makeCharacter('npc');
 const mossling = makeMossling();
 const mosslingRest = makeMosslingRest();
