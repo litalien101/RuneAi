@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {
   acknowledgeInputs, DeterministicNetworkQueue, FakeClock, FixedStepRunner, NetworkSimulator,
-  integrateMovement, SnapshotBuffer, walkablePosition,
+  integrateMovement, integrateVerticalMovement, SnapshotBuffer, walkablePosition,
 } from '../network.js';
 
 const movementContract = JSON.parse(readFileSync(fileURLToPath(new URL('../../tests/fixtures/movement-contract.json', import.meta.url)), 'utf8'));
@@ -146,6 +146,23 @@ test('browser movement follows the shared client/server fixed-tick contract', ()
     position.z - movementContract.expected.position.z) < 1e-9);
   assert.ok(Math.hypot(velocity.x - movementContract.expected.velocity.x,
     velocity.z - movementContract.expected.velocity.z) < 1e-9);
+});
+
+test('browser jump trajectory follows the shared server movement contract', () => {
+  const jump = movementContract.jump;
+  let motion = {height: 0, velocity: 0, grounded: true, jumpBuffer: 0, coyoteTime: jump.coyote_seconds};
+  let peak = 0, apexTick = null, landingTick = null;
+  for (let tick = 1; tick <= 60; tick++) {
+    motion = integrateVerticalMovement(motion, tick === 1, 1 / movementContract.fixed_hz);
+    if (motion.height > peak) { peak = motion.height; apexTick = tick; }
+    if (tick > 1 && motion.grounded && landingTick === null) landingTick = tick;
+  }
+  assert.equal(apexTick, jump.expected_apex_tick);
+  assert.ok(Math.abs(peak - jump.expected_apex_height) < 1e-12);
+  assert.equal(landingTick, jump.expected_landing_tick);
+  assert.equal(motion.height, 0);
+  assert.equal(motion.velocity, 0);
+  assert.equal(motion.grounded, true);
 });
 
 test('browser terrain footprint matches the shared collision contract', () => {

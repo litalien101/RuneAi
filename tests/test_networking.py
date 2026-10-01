@@ -7,7 +7,11 @@ from pathlib import Path
 from atlas_server.contracts import AtlasContracts
 from atlas_server.history import EntityHistory, HitboxSnapshot, validate_melee_hit
 from atlas_server.store import WorldStore
-from atlas_server.world import PLAYER_ENTITY_ID, PLAYER_ENTITY_IDS, WORLD_OBSTACLES, TERRAIN, apply_action, initial_state, walkable_position
+from atlas_server.world import (
+    COYOTE_SECONDS, JUMP_BUFFER_SECONDS, JUMP_GRAVITY, JUMP_SPEED,
+    PLAYER_ENTITY_ID, PLAYER_ENTITY_IDS, WORLD_OBSTACLES, TERRAIN,
+    apply_action, initial_state, walkable_position,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -90,6 +94,31 @@ class MovementSequenceTests(unittest.TestCase):
                                    player["y"] - fixture["expected"]["position"]["z"]), 1e-9)
         self.assertLess(math.hypot(player["vx"] - fixture["expected"]["velocity"]["x"],
                                    player["vz"] - fixture["expected"]["velocity"]["z"]), 1e-9)
+
+    def test_server_jump_matches_shared_controller_contract(self):
+        fixture = json.loads((ROOT / "tests" / "fixtures" / "movement-contract.json").read_text())
+        jump = fixture["jump"]
+        self.assertEqual((JUMP_SPEED, JUMP_GRAVITY, JUMP_BUFFER_SECONDS, COYOTE_SECONDS),
+                         (jump["speed"], jump["gravity"], jump["buffer_seconds"], jump["coyote_seconds"]))
+        state = initial_state()
+        peak, apex_tick, landing_tick = 0.0, None, None
+        for tick in range(1, 61):
+            state, _, detail = apply_action(state, {
+                "type": "move", "input": {"x": 0, "z": 0}, "run": False,
+                "jump": tick == 1, "_sim_input": {"x": 0, "z": 0},
+                "_sim_run": False, "dt": 1 / fixture["fixed_hz"],
+            })
+            height = state["player"]["height"]
+            if height > peak:
+                peak, apex_tick = height, tick
+            if tick > 1 and detail["grounded"] and landing_tick is None:
+                landing_tick = tick
+        self.assertEqual(apex_tick, jump["expected_apex_tick"])
+        self.assertAlmostEqual(peak, jump["expected_apex_height"], places=12)
+        self.assertEqual(landing_tick, jump["expected_landing_tick"])
+        self.assertEqual(state["player"]["height"], 0.0)
+        self.assertTrue(state["player"]["grounded"])
+        self.assertEqual(state["player"]["vy"], 0.0)
 
     def test_server_terrain_footprint_matches_shared_collision_contract(self):
         fixture = json.loads((ROOT / "tests" / "fixtures" / "movement-contract.json").read_text())

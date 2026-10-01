@@ -109,6 +109,8 @@ let snapshotPollPending = false;
 let walkWeight = 0;
 let runWeight = 0;
 let jumpWeight = 0;
+let landingImpact = 0;
+let landingTime = 0;
 let lastFrameTime = 0;
 let targetPlayerYaw = 0;
 let gaitPhase = 0;
@@ -391,6 +393,7 @@ function applyState(state) {
       const avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
       avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);
       remote={avatar,snapshots:new SnapshotBuffer(24),lastTick:-1,gaitPhase:0,walkWeight:0,runWeight:0,jumpWeight:0,
+        landingImpact:0,landingTime:0,lastGrounded:traveler.grounded!==false,
         latest:{x:traveler.x,z:traveler.y,height:traveler.height||0}};
       otherTravelers.set(traveler.id,remote);
     }
@@ -468,6 +471,12 @@ function renderHud(){
 
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function eventName(type){return ({PlayerMoved:'Trail walked',ResourceGathered:'Lumen reed gathered',NPCSpokenTo:'Mara was heard',BeaconAwakened:'Beacon awakened',CreatureDamaged:'Mossling encounter',PlayerGuarded:'Guard raised',PlayerDodged:'Attack evaded',CreatureReawakened:'Mossling returned'})[type]||type;}
+function locomotionState(speed,grounded,verticalVelocity,landingRemaining){
+  if(!grounded)return verticalVelocity>.15?'jump':'fall';
+  if(landingRemaining>0)return 'land';
+  if(speed>.08)return speed>2.85?'run':'walk';
+  return 'idle';
+}
 
 function clearRewindOverlay(){
   if(!rewindOverlay)return;
@@ -757,8 +766,10 @@ function animate(time){
     const input=movementInput();
     movementClock.update(delta,stepDelta=>{
       previousPredictedPosition.x=predictedPosition.x;previousPredictedPosition.z=predictedPosition.z;
+      const wasGrounded=verticalMotion.grounded;
       const jumpPressed=inputManager.justPressed(' ');
       simulateMovementFrame(input,input.run,stepDelta,jumpPressed);
+      if(!wasGrounded&&verticalMotion.grounded){landingImpact=1;landingTime=.14;}
       if(Math.hypot(input.x,input.z)>.001||Math.hypot(predictedVelocity.x,predictedVelocity.z)>.03||!verticalMotion.grounded||jumpPressed){
         const frame={sequence:++movementSequence,timestamp:performance.now(),input:{x:input.x,z:input.z},run:input.run,jump:jumpPressed};
         pendingInputs.push(frame);outgoingInputs.push(frame);
@@ -774,24 +785,29 @@ function animate(time){
       refresh().catch(error=>{if(error.status===409)showConnectionError(error.message);}).finally(()=>{snapshotPollPending=false;});
     }
     const speed=Math.hypot(predictedVelocity.x,predictedVelocity.z);
+    landingImpact*=Math.exp(-22*delta);landingTime=Math.max(0,landingTime-delta);
+    const state=locomotionState(speed,verticalMotion.grounded,verticalMotion.velocity,landingTime);
+    player.userData.locomotionState=state;
     const yawDifference=Math.atan2(Math.sin(targetPlayerYaw-player.rotation.y),Math.cos(targetPlayerYaw-player.rotation.y));
     player.rotation.y+=yawDifference*(1-Math.exp(-12*delta));
-    const targetWalk=speed>.08?1:0,targetRun=speed>2.85?1:0;
+    const targetWalk=state==='walk'||state==='run'?1:0,targetRun=state==='run'?1:0;
     walkWeight+=(targetWalk-walkWeight)*(1-Math.exp(-10*delta));
     runWeight+=(targetRun-runWeight)*(1-Math.exp(-8*delta));
     const moving=walkWeight>.025;
     gaitPhase+=speed/(1.28+.38*runWeight)*Math.PI*2*delta;
     const gait=moving?Math.sin(gaitPhase):0;
     const playerParts=player.userData.parts;
-    jumpWeight+=(verticalMotion.grounded?0:1-jumpWeight)*(1-Math.exp(-12*delta));
-    if(verticalMotion.grounded)jumpWeight*=Math.exp(-10*delta);
-    playerParts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*walkWeight,-.42,jumpWeight);
+    const inAir=state==='jump'||state==='fall';
+    jumpWeight+=((inAir?1:0)-jumpWeight)*(1-Math.exp(-(inAir?12:16)*delta));
+    const jumpLeg=state==='fall'?.2:-.42,fallArm=state==='fall'?.38:-1.0;
+    playerParts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*walkWeight,jumpLeg,jumpWeight);
     playerParts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*walkWeight,.28,jumpWeight);
-    playerParts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*walkWeight,-1.0,jumpWeight);
-    playerParts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*walkWeight,-1.0,jumpWeight);
+    playerParts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*walkWeight,fallArm,jumpWeight);
+    playerParts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*walkWeight,fallArm,jumpWeight);
+    const squash=landingImpact*.08;
+    player.scale.set(1+squash*.45,1-squash,1+squash*.45);
     player.position.y=verticalMotion.height+verticalCorrection+(moving&&verticalMotion.grounded?Math.abs(gait)*(.025+.025*runWeight)*walkWeight:0);
-    cameraController.update(delta,player.position,inputManager.cameraIntent());
-    camera.position.y+=Math.sin(gaitPhase*2)*.018*walkWeight;
+    cameraController.update(delta,player.position,inputManager.cameraIntent(),game.obstacles);
     skyDome.position.copy(camera.position);
     for(const foliage of foliageModels){
       const sway=Math.sin(time*.00048+(foliage.userData.windPhase||0))*(foliage.userData.windStrength||.025);
@@ -815,17 +831,26 @@ function animate(time){
     remote.avatar.position.x=sample.x;remote.avatar.position.z=sample.z;
     remote.avatar.position.y=(sample.height||0)+(sample.grounded===false?0:.008*Math.sin(time*.002+sample.x));
     const speed=Math.hypot(sample.vx||0,sample.vz||0);
+    if(remote.lastGrounded===false&&sample.grounded===true){remote.landingImpact=1;remote.landingTime=.14;}
+    remote.lastGrounded=sample.grounded!==false;
+    remote.landingImpact*=Math.exp(-22*frameDelta);remote.landingTime=Math.max(0,remote.landingTime-frameDelta);
+    const state=locomotionState(speed,sample.grounded!==false,sample.vertical_velocity||0,remote.landingTime);
+    remote.avatar.userData.locomotionState=state;
     if(speed>.08){const yaw=Math.atan2(sample.vx,sample.vz);const difference=Math.atan2(Math.sin(yaw-remote.avatar.rotation.y),Math.cos(yaw-remote.avatar.rotation.y));remote.avatar.rotation.y+=difference*(1-Math.exp(-12*frameDelta));}
-    remote.walkWeight+=((speed>.08?1:0)-remote.walkWeight)*(1-Math.exp(-10*frameDelta));
-    const running=speed>2.85;
+    remote.walkWeight+=((state==='walk'||state==='run'?1:0)-remote.walkWeight)*(1-Math.exp(-10*frameDelta));
+    const running=state==='run';
     remote.runWeight+=((running?1:0)-remote.runWeight)*(1-Math.exp(-8*frameDelta));
-    remote.jumpWeight+=((sample.grounded===false?1:0)-remote.jumpWeight)*(1-Math.exp(-10*frameDelta));
+    const inAir=state==='jump'||state==='fall';
+    remote.jumpWeight+=((inAir?1:0)-remote.jumpWeight)*(1-Math.exp(-(inAir?12:16)*frameDelta));
     remote.gaitPhase+=speed/(1.28+.38*remote.runWeight)*Math.PI*2*frameDelta;
     const gait=remote.walkWeight>.025?Math.sin(remote.gaitPhase):0,parts=remote.avatar.userData.parts;
-    parts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*remote.walkWeight,-.42,remote.jumpWeight);
+    const jumpLeg=state==='fall'?0.2:-0.42,fallArm=state==='fall'?0.38:-1.0;
+    parts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*remote.walkWeight,jumpLeg,remote.jumpWeight);
     parts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*remote.walkWeight,.28,remote.jumpWeight);
-    parts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*remote.walkWeight,-1.0,remote.jumpWeight);
-    parts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*remote.walkWeight,-1.0,remote.jumpWeight);
+    parts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*remote.walkWeight,fallArm,remote.jumpWeight);
+    parts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*remote.walkWeight,fallArm,remote.jumpWeight);
+    const squash=remote.landingImpact*.08;
+    remote.avatar.scale.set(1+squash*.45,1-squash,1+squash*.45);
   }
   renderer.render(scene,camera);
 }

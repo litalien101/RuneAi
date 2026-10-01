@@ -1,5 +1,14 @@
 {
   "fixed_hz": 60,
+  "jump": {
+    "speed": 5.2,
+    "gravity": 16.0,
+    "buffer_seconds": 0.12,
+    "coyote_seconds": 0.10,
+    "expected_apex_tick": 19,
+    "expected_apex_height": 0.8022222222222225,
+    "expected_landing_tick": 39
+  },
   "start": { "x": 3, "z": 10 },
   "segments": [
     { "ticks": 60, "input": { "x": 1, "z": 0 }, "run": false },
