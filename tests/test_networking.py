@@ -7,7 +7,7 @@ from pathlib import Path
 from atlas_server.contracts import AtlasContracts
 from atlas_server.history import EntityHistory, HitboxSnapshot, validate_melee_hit
 from atlas_server.store import WorldStore
-from atlas_server.world import WORLD_OBSTACLES, TERRAIN, apply_action, initial_state, walkable_position
+from atlas_server.world import PLAYER_ENTITY_ID, PLAYER_ENTITY_IDS, WORLD_OBSTACLES, TERRAIN, apply_action, initial_state, walkable_position
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +121,78 @@ class MovementSequenceTests(unittest.TestCase):
         self.store._record_history(7, time.monotonic() - .75, {"x": 11.5, "y": 9.0})
         with self.assertRaisesRegex(ValueError, "closer"):
             self.store.command({"type": "attack", "target": "mossling", "rewind_sequence": 7})
+
+    def test_local_sessions_claim_two_distinct_players_and_reject_a_third(self):
+        first = self.store.create_session()
+        second = self.store.create_session()
+        self.assertNotEqual(first["session_token"], second["session_token"])
+        self.assertEqual({first["player_id"], second["player_id"]}, set(PLAYER_ENTITY_IDS))
+        self.assertEqual(self.store.player_for_session(first["session_token"]), first["player_id"])
+        self.assertIsNone(self.store.player_for_session("unknown-session"))
+        with self.assertRaisesRegex(ValueError, "Both local traveler seats"):
+            self.store.create_session()
+
+    def test_each_player_has_independent_ticks_position_and_event_actor(self):
+        frames_one = [{"sequence": n, "input": {"x": 1, "z": 0}, "run": False} for n in (1, 2, 3)]
+        frames_two = [{"sequence": n, "input": {"x": 0, "z": -1}, "run": False} for n in (1, 2, 3)]
+        result_one = self.store.command({"type": "move", "sequence": 3, "frames": frames_one}, PLAYER_ENTITY_IDS[0])
+        result_two = self.store.command({"type": "move", "sequence": 3, "frames": frames_two}, PLAYER_ENTITY_IDS[1])
+        self.assertEqual(result_one["acknowledged_sequence"], 3)
+        self.assertEqual(result_two["acknowledged_sequence"], 3)
+        self.assertEqual(self.store.last_input_sequence_for(PLAYER_ENTITY_IDS[0]), 3)
+        self.assertEqual(self.store.last_input_sequence_for(PLAYER_ENTITY_IDS[1]), 3)
+        first_state, events = self.store.read(PLAYER_ENTITY_IDS[0])
+        self_state, _ = self.store.read(PLAYER_ENTITY_IDS[1])
+        positions = {player["id"]: player for player in first_state["players"]}
+        self.assertGreater(positions[PLAYER_ENTITY_IDS[0]]["x"], 3.0)
+        self.assertLess(positions[PLAYER_ENTITY_IDS[1]]["y"], 10.0)
+        self.assertEqual(self_state["player"]["x"], positions[PLAYER_ENTITY_IDS[1]]["x"])
+        self.assertEqual([event["actor_id"] for event in events], list(PLAYER_ENTITY_IDS))
+
+    def test_shared_gather_is_claimed_once_but_inventory_belongs_to_actor(self):
+        with self.store.connect() as db:
+            row = db.execute("SELECT state_json FROM player_states WHERE player_id = ?", (PLAYER_ENTITY_IDS[0],)).fetchone()
+            personal = json.loads(row["state_json"])
+            personal["player"].update(x=5.0, y=5.8)
+            db.execute("UPDATE player_states SET state_json = ? WHERE player_id = ?",
+                       (json.dumps(personal), PLAYER_ENTITY_IDS[0]))
+        self.store.command({"type": "interact", "target": "reed-west"}, PLAYER_ENTITY_IDS[0])
+        first, _ = self.store.read(PLAYER_ENTITY_IDS[0])
+        second, _ = self.store.read(PLAYER_ENTITY_IDS[1])
+        self.assertEqual(first["inventory"]["lumen_reed"], 1)
+        self.assertEqual(second["inventory"]["lumen_reed"], 0)
+        self.assertIn("reed-west", first["gathered"])
+
+    def test_other_traveler_is_a_shared_solid_movement_collider(self):
+        other_id = PLAYER_ENTITY_IDS[1]
+        with self.store.connect() as db:
+            row = db.execute("SELECT state_json FROM player_states WHERE player_id = ?", (other_id,)).fetchone()
+            personal = json.loads(row["state_json"])
+            personal["player"].update(x=4.2, y=10.0, vx=0.0, vz=0.0)
+            db.execute("UPDATE player_states SET state_json = ? WHERE player_id = ?",
+                       (json.dumps(personal), other_id))
+        for start in (1, 33, 65):
+            frames = [{"sequence": n, "input": {"x": 1, "z": 0}, "run": False}
+                      for n in range(start, start + 32)]
+            self.store.command({"type": "move", "sequence": start + 31, "frames": frames}, PLAYER_ENTITY_IDS[0])
+        first, _ = self.store.read(PLAYER_ENTITY_IDS[0])
+        self.assertLessEqual(first["player"]["x"], 3.81)
+
+    def test_player_state_and_tick_survive_store_reopen_and_projection_rebuild(self):
+        player_id = PLAYER_ENTITY_IDS[1]
+        frames = [{"sequence": n, "input": {"x": 1, "z": 0}, "run": False} for n in (1, 2)]
+        self.store.command({"type": "move", "sequence": 2, "frames": frames}, player_id)
+        saved, _ = self.store.read(player_id)
+        with self.store.connect() as db:
+            db.execute("UPDATE player_states SET last_tick = 0 WHERE player_id = ?", (player_id,))
+        rebuilt = self.store.rebuild_projection()
+        self.assertEqual(rebuilt["gathered"], saved["gathered"])
+        self.assertEqual(self.store.last_input_sequence_for(player_id), 2)
+        self.store = WorldStore(Path(self.temp.name) / "world.sqlite3", AtlasContracts(SPECS))
+        reopened, _ = self.store.read(player_id)
+        for coordinate in ("x", "y", "vx", "vz"):
+            self.assertAlmostEqual(reopened["player"][coordinate], saved["player"][coordinate], places=12)
+        self.assertEqual(self.store.last_input_sequence_for(player_id), 2)
 
 
 class HitboxRewindTests(unittest.TestCase):

@@ -10,6 +10,10 @@ from .history import HitboxSnapshot, validate_melee_hit
 WIDTH, HEIGHT = 20, 14
 START = (3, 10)
 PLAYER_ENTITY_ID = "9163de5b-b156-5d5e-bb43-f371650c4998"
+SECOND_PLAYER_ENTITY_ID = "70968bb0-4c0a-52ad-94ea-3f4f6f1368b2"
+PLAYER_ENTITY_IDS = (PLAYER_ENTITY_ID, SECOND_PLAYER_ENTITY_ID)
+PLAYER_NAMES = {PLAYER_ENTITY_ID: "Wayfarer", SECOND_PLAYER_ENTITY_ID: "Pathfinder"}
+PLAYER_STARTS = {PLAYER_ENTITY_ID: START, SECOND_PLAYER_ENTITY_ID: (4.2, 10.0)}
 REGION_ENTITY_ID = "55cab3bc-32ce-5db6-b831-3dbde118912e"
 WORLD_ENTITY_IDS = {
     "mara": "a237cd4e-50fb-5448-9f16-88c6a2436d3e",
@@ -34,8 +38,9 @@ def world_manifest() -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Return the static game world in Atlas entity and relationship form."""
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     entities: list[dict[str, Any]] = [
-        {"id": PLAYER_ENTITY_ID, "type": "Player", "created_at": created_at,
-         "name": "Wayfarer", "x": START[0], "y": START[1]},
+        *[{"id": player_id, "type": "Player", "created_at": created_at,
+          "name": PLAYER_NAMES[player_id], "x": PLAYER_STARTS[player_id][0], "y": PLAYER_STARTS[player_id][1]}
+          for player_id in PLAYER_ENTITY_IDS],
         {"id": REGION_ENTITY_ID, "type": "Region", "created_at": created_at,
          "name": "Valley of First Light"},
         {"id": WORLD_ENTITY_IDS["mara"], "type": "NPC", "created_at": created_at,
@@ -51,7 +56,8 @@ def world_manifest() -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     entities.append({"id": WORLD_ENTITY_IDS["mossling"], "type": "Creature", "created_at": created_at,
                      "name": MOSSLING["name"], "x": MOSSLING["x"], "y": MOSSLING["y"]})
     relationships = [
-        {"type": "located_in", "source_id": PLAYER_ENTITY_ID, "target_id": REGION_ENTITY_ID},
+        *[{"type": "located_in", "source_id": player_id, "target_id": REGION_ENTITY_ID}
+          for player_id in PLAYER_ENTITY_IDS],
         {"type": "located_in", "source_id": WORLD_ENTITY_IDS["mara"], "target_id": REGION_ENTITY_ID},
         {"type": "placed_in", "source_id": WORLD_ENTITY_IDS["beacon"], "target_id": REGION_ENTITY_ID},
         *[
@@ -181,6 +187,7 @@ def public_state(state: dict[str, Any], events: list[dict[str, Any]]) -> dict[st
         "beacon": BEACON,
         "reed_patches": [reed for reed in REEDS if reed["id"] not in state["gathered"]],
         "events": events,
+        "players": state.get("players", []),
     }
 
 def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
@@ -201,6 +208,7 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
         old_vx, old_vz = player.get("vx", 0.0), player.get("vz", 0.0)
         remaining = dt
         vx, vz = old_vx, old_vz
+        obstacles = action.get("_obstacles")
         while remaining > 1e-9:
             step = min(remaining, 1 / 60)
             decay = exp(-rate * step)
@@ -209,12 +217,12 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             displacement_x = target_vx * step + (vx - target_vx) * (1 - decay) / rate
             displacement_z = target_vz * step + (vz - target_vz) * (1 - decay) / rate
             next_x, next_z = player["x"] + displacement_x, player["y"] + displacement_z
-            if walkable_position(next_x, player["y"]):
+            if walkable_position(next_x, player["y"], obstacles=obstacles):
                 player["x"] = next_x
                 vx = next_vx
             else:
                 vx = 0.0
-            if walkable_position(player["x"], next_z):
+            if walkable_position(player["x"], next_z, obstacles=obstacles):
                 player["y"] = next_z
                 vz = next_vz
             else:
@@ -223,8 +231,8 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
         if braking and hypot(vx, vz) < 0.035:
             vx = vz = 0.0
         player.update(vx=vx, vz=vz)
-        return state, "PlayerMoved", {"x": round(player["x"], 4), "z": round(player["y"], 4),
-            "vx": round(vx, 4), "vz": round(vz, 4), "running": action.get("_sim_run", action.get("run", False))}
+        return state, "PlayerMoved", {"x": player["x"], "z": player["y"],
+            "vx": vx, "vz": vz, "running": action.get("_sim_run", action.get("run", False))}
 
     if kind == "attack":
         if action.get("target") != MOSSLING["id"]:

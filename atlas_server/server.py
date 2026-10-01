@@ -9,7 +9,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from .contracts import AtlasContracts
-from .store import WorldStore
+from .store import SessionCapacityError, WorldStore
 from .world import public_state
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,9 +33,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         path = urlsplit(self.path).path
         if path == "/api/state":
-            state, events = self.store.read()
+            player_id = self.store.player_for_session(self.headers.get("X-Atlas-Session"))
+            if player_id is None:
+                return self._json(401, {"error": "A local traveler session is required."})
+            state, events = self.store.read(player_id)
             response = public_state(state, events)
-            response["last_processed_input"] = self.store.last_input_sequence
+            response["last_processed_input"] = self.store.last_input_sequence_for(player_id)
+            response["active_player"] = {"id": player_id, "name": next(p["name"] for p in state["players"] if p["is_self"])}
             return self._json(200, response)
         asset = {"/": "index.html", "/game.js": "game.js", "/styles.css": "styles.css"}.get(path)
         if asset is None:
@@ -49,7 +53,13 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_POST(self) -> None:
-        if urlsplit(self.path).path != "/api/action":
+        path = urlsplit(self.path).path
+        if path == "/api/session":
+            try:
+                return self._json(201, self.store.create_session())
+            except SessionCapacityError as exc:
+                return self._json(409, {"error": str(exc)})
+        if path != "/api/action":
             return self._json(404, {"error": "Not found"})
         expected_host = f"127.0.0.1:{self.server.server_port}"
         if self.headers.get("Host", "").lower() not in {expected_host, f"localhost:{self.server.server_port}"}:
@@ -57,6 +67,9 @@ class Handler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin and origin not in {f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}"}:
             return self._json(403, {"error": "Cross-origin actions are not allowed"})
+        player_id = self.store.player_for_session(self.headers.get("X-Atlas-Session"))
+        if player_id is None:
+            return self._json(401, {"error": "A local traveler session is required."})
         try:
             length = int(self.headers.get("Content-Length", "0"))
         except ValueError:
@@ -69,7 +82,7 @@ class Handler(BaseHTTPRequestHandler):
             action = json.loads(self.rfile.read(length))
             if not isinstance(action, dict):
                 raise ValueError("Action must be an object.")
-            event = self.store.command(action)
+            event = self.store.command(action, player_id)
         except (UnicodeDecodeError, json.JSONDecodeError):
             return self._json(400, {"error": "Malformed JSON"})
         except ValueError as exc:

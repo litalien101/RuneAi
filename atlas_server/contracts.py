@@ -9,7 +9,7 @@ from uuid import UUID
 
 import yaml
 
-from .world import PLAYER_ENTITY_ID, WORLD_ENTITY_IDS, REGION_ENTITY_ID, world_manifest
+from .world import WORLD_ENTITY_IDS, REGION_ENTITY_ID, world_manifest
 
 
 class ContractError(ValueError):
@@ -134,16 +134,17 @@ class AtlasContracts:
             raise ContractError("Unsupported world event schema version")
         if not event.get("actor_id") or not event.get("source_kind") or not event.get("source_identifier"):
             raise ContractError("World events require an actor and source reference")
-        if event.get("actor_id") != PLAYER_ENTITY_ID:
-            raise ContractError("The event actor must resolve to the registered local player")
+        actor = self.entity_by_id.get(event.get("actor_id"))
+        if actor is None or not self._is_subtype(actor.get("type", ""), "Player"):
+            raise ContractError("The event actor must resolve to a registered Player entity")
         try:
             UUID(event["source_identifier"])
         except (ValueError, TypeError, KeyError) as exc:
             raise ContractError("World event source identifier must be a UUID") from exc
         if not event.get("rationale"):
             raise ContractError("World events require a rationale")
-        if event.get("subject_id") != PLAYER_ENTITY_ID:
-            raise ContractError("This local slice only accepts commands from its registered player entity")
+        if event.get("subject_id") != event.get("actor_id"):
+            raise ContractError("The event subject must match the registered player actor")
         if event.get("object_id") is not None and event["object_id"] not in self.entity_by_id:
             raise ContractError("World event object reference does not resolve to a validated entity")
         if relation_type is not None:

@@ -61,6 +61,7 @@ scene.add(skyDome);
 const world = new THREE.Group();
 scene.add(world);
 const player = makeCharacter('player');
+const otherTravelers = new Map();
 const mara = makeCharacter('npc');
 const mossling = makeMossling();
 const mosslingRest = makeMosslingRest();
@@ -78,7 +79,9 @@ let toastTimer = 0;
 let clickPointer = null;
 let positionCorrection = { x: 0, z: 0 };
 let predictedVelocity = { x: 0, z: 0 };
-const network = new NetworkSimulator();
+let sessionToken = sessionStorage.getItem('atlas.local.session') || '';
+let sessionRecovery = null;
+const network = new NetworkSimulator(undefined, undefined, authenticatedFetch);
 const movementClock = new FixedStepRunner(1 / 60, 8);
 const predictedPosition = { x: 0, z: 0 };
 const previousPredictedPosition = { x: 0, z: 0 };
@@ -96,6 +99,7 @@ let initialStateLoaded = false;
 let clickDestination = null;
 let lastSentInput = { x: 0, z: 0, run: false };
 let nextInputAt = 0;
+let nextSnapshotPollAt = 0;
 let walkWeight = 0;
 let runWeight = 0;
 let lastFrameTime = 0;
@@ -246,12 +250,13 @@ function addFlowerPatch(x, z, color) {
 
 function makeCharacter(kind) {
   const group = new THREE.Group();
-  const isPlayer = kind === 'player';
+  const isPlayer = kind === 'player' || kind === 'player2';
+  const isSecondPlayer = kind === 'player2';
   group.userData.kind = kind;
-  const robe = material(isPlayer ? '#426d71' : '#a56e43');
-  const robeLight = material(isPlayer ? '#628f8d' : '#c5945d');
+  const robe = material(isPlayer ? (isSecondPlayer ? '#725d86' : '#426d71') : '#a56e43');
+  const robeLight = material(isPlayer ? (isSecondPlayer ? '#a18ab2' : '#628f8d') : '#c5945d');
   const dark = material('#3b4037');
-  const skin = material(isPlayer ? '#d8b58e' : '#dfbd8a');
+  const skin = material(isPlayer ? (isSecondPlayer ? '#cda88c' : '#d8b58e') : '#dfbd8a');
   const mantle = addMesh(group, new THREE.CylinderGeometry(.21,.31,.57,16,3), robe, [0,.61,0]);
   mantle.scale.z=.82;
   addMesh(group, new THREE.SphereGeometry(.205,18,14), skin, [0,1.03,0]);
@@ -276,7 +281,8 @@ function makeCharacter(kind) {
   } else {
     addMesh(group,new THREE.SphereGeometry(.055,8,6),material('#e5c97f',.38,{emissive:'#c89443',emissiveIntensity:.25}),[0,1.1,.18]);
   }
-  group.add(makeNameplate(isPlayer?'WAYFARER':'MARA',isPlayer?'#d3e1cb':'#e7c78b',isPlayer?1.67:1.74));
+  group.userData.nameplate=makeNameplate(isPlayer?(isSecondPlayer?'PATHFINDER':'WAYFARER'):'MARA',isPlayer?(isSecondPlayer?'#e3c7f2':'#d3e1cb'):'#e7c78b',isPlayer?1.67:1.74);
+  group.add(group.userData.nameplate);
   group.userData.parts={mantle,armL,armR,legL,legR};
   return group;
 }
@@ -356,6 +362,31 @@ function addReedPatches(state){state.reed_patches.forEach(makeReed);}
 function applyState(state) {
   const oldPlayer=game?.player;
   game=state;
+  if(Number.isInteger(state.last_processed_input)){
+    acknowledgedSequence=Math.max(acknowledgedSequence,state.last_processed_input);
+    movementSequence=Math.max(movementSequence,state.last_processed_input);
+    pendingInputs=acknowledgeInputs(pendingInputs,acknowledgedSequence);
+    outgoingInputs=outgoingInputs.filter(frame=>frame.sequence>acknowledgedSequence);
+  }
+  const localName=state.active_player?.name||'Wayfarer';
+  if(player.userData.displayName!==localName){
+    if(player.userData.nameplate){player.remove(player.userData.nameplate);player.userData.nameplate.material.map?.dispose();player.userData.nameplate.material.dispose();}
+    player.userData.nameplate=makeNameplate(localName.toUpperCase(),localName==='Pathfinder'?'#e3c7f2':'#d3e1cb',1.67);
+    player.add(player.userData.nameplate);player.userData.displayName=localName;
+  }
+  const remoteIds=new Set();
+  for(const traveler of state.players||[]){
+    if(traveler.is_self)continue;
+    remoteIds.add(traveler.id);
+    let avatar=otherTravelers.get(traveler.id);
+    if(!avatar){
+      avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
+      avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);otherTravelers.set(traveler.id,avatar);
+    }
+    avatar.userData.targetX=traveler.x;avatar.userData.targetZ=traveler.y;
+  }
+  for(const [id,avatar] of otherTravelers)if(!remoteIds.has(id)){world.remove(avatar);otherTravelers.delete(id);}
+  if(state.active_player)$('#region-label').textContent=`${state.active_player.name.toUpperCase()} · LOCAL WORLD`;
   const authoritativeVelocity=state.velocity||{x:0,z:0};
   player.userData.targetX=state.player.x;player.userData.targetZ=state.player.y;
   if(!initialStateLoaded){
@@ -441,7 +472,7 @@ function showRewindOverlay(detail){
 }
 
 async function refresh(){
-  const response=await fetch('/api/state',{headers:{'Accept':'application/json'}});
+  const response=await authenticatedFetch('/api/state',{headers:{'Accept':'application/json'}});
   if(!response.ok)throw new Error('The valley could not be reached.');
   applyState(await response.json());
 }
@@ -451,7 +482,7 @@ async function act(action){
   try{
     const options={method:'POST',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify(action)};
     const delivered=action.type==='move'?await network.request('/api/action',options,{retry:true}):null;
-    const response=delivered?.response||await fetch('/api/action',options);
+    const response=delivered?.response||await authenticatedFetch('/api/action',options);
     const result=delivered?.payload||await response.json();
     if(!response.ok){
       if(action.type==='move'&&Array.isArray(action.frames)){
@@ -568,12 +599,30 @@ function movementInput(){
   return {x,z,run:movement.run&&length>0};
 }
 function walkableAt(x,z){
-  return !game?.terrain||walkablePosition(x,z,game.terrain,game.width,game.height,.2,game.obstacles||[]);
+  const playerObstacles=[...(game?.players||[]).filter(p=>!p.is_self).map(p=>({x:p.x,z:p.y,radius:.2}))];
+  return !game?.terrain||walkablePosition(x,z,game.terrain,game.width,game.height,.2,[...(game.obstacles||[]),...playerObstacles]);
+}
+
+async function createLocalSession(){
+  const response=await fetch('/api/session',{method:'POST',headers:{'Accept':'application/json'}});
+  const payload=await response.json();
+  if(!response.ok)throw new Error(payload.error||'No local traveler seat is available.');
+  sessionToken=payload.session_token;sessionStorage.setItem('atlas.local.session',sessionToken);
+}
+
+async function authenticatedFetch(url,options={}){
+  const send=()=>fetch(url,{...options,headers:{...(options.headers||{}),'X-Atlas-Session':sessionToken}});
+  let response=await send();
+  if(response.status===401&&url!=='/api/session'){
+    if(!sessionRecovery)sessionRecovery=createLocalSession().finally(()=>{sessionRecovery=null;});
+    await sessionRecovery;response=await send();
+  }
+  return response;
 }
 function tickMovement(time){
   const lastFrame=outgoingInputs.at(-1);
   const changed=lastFrame&&(lastFrame.input.x!==lastSentInput.x||lastFrame.input.z!==lastSentInput.z||lastFrame.run!==lastSentInput.run);
-  if(!busy&&outgoingInputs.length&&(changed||time>=nextInputAt)){
+    if(!busy&&outgoingInputs.length&&(changed||time>=nextInputAt)){
     const frames=outgoingInputs.splice(0,32);
     lastSentInput=frames.at(-1);nextInputAt=time+95;
     act({type:'move',sequence:frames.at(-1).sequence,frames});
@@ -650,9 +699,10 @@ canvas.addEventListener('pointerup',event=>{
 
 function animate(time){
   requestAnimationFrame(animate);
+  const frameDelta=lastFrameTime?Math.min((time-lastFrameTime)/1000,.05):1/60;lastFrameTime=time;
   if(game){
     updateNetworkHud(time);
-    const delta=lastFrameTime?Math.min((time-lastFrameTime)/1000,.05):1/60;lastFrameTime=time;
+    const delta=frameDelta;
     const input=movementInput();
     movementClock.update(delta,stepDelta=>{
       previousPredictedPosition.x=predictedPosition.x;previousPredictedPosition.z=predictedPosition.z;
@@ -667,6 +717,7 @@ function animate(time){
     player.position.x=previousPredictedPosition.x+(predictedPosition.x-previousPredictedPosition.x)*renderAlpha+positionCorrection.x;
     player.position.z=previousPredictedPosition.z+(predictedPosition.z-previousPredictedPosition.z)*renderAlpha+positionCorrection.z;
     tickMovement(time);
+    if(!busy&&time>=nextSnapshotPollAt){nextSnapshotPollAt=time+450;refresh().catch(()=>{});}
     const speed=Math.hypot(predictedVelocity.x,predictedVelocity.z);
     const yawDifference=Math.atan2(Math.sin(targetPlayerYaw-player.rotation.y),Math.cos(targetPlayerYaw-player.rotation.y));
     player.rotation.y+=yawDifference*(1-Math.exp(-12*delta));
@@ -699,10 +750,16 @@ function animate(time){
     if(mosslingRest.visible)mosslingRest.userData.seed.rotation.y=time*.0007;
   }
   if(!game)skyDome.position.copy(camera.position);
+  for(const avatar of otherTravelers.values()){
+    const targetX=avatar.userData.targetX??avatar.position.x,targetZ=avatar.userData.targetZ??avatar.position.z;
+    avatar.position.x+=(targetX-avatar.position.x)*(1-Math.exp(-9*frameDelta));
+    avatar.position.z+=(targetZ-avatar.position.z)*(1-Math.exp(-9*frameDelta));
+    avatar.position.y=.008*Math.sin(time*.002+targetX);
+  }
   renderer.render(scene,camera);
 }
 
 scene.add(new THREE.AmbientLight('#d8d4bd',.24));
 cameraController.snap(player.position);resize();
-fetch('/api/state',{headers:{'Accept':'application/json'}}).then(r=>{if(!r.ok)throw new Error(`World state request failed (${r.status})`);return r.json();}).then(state=>{buildLandscape(state);applyState(state);cameraController.snap(player.position);}).catch(error=>{console.error('Atlas world startup failed:',error);showToast('The valley could not load. Check the browser console and restart the local server.');});
+authenticatedFetch('/api/state',{headers:{'Accept':'application/json'}}).then(r=>{if(!r.ok)throw new Error(`World state request failed (${r.status})`);return r.json();}).then(state=>{buildLandscape(state);applyState(state);cameraController.snap(player.position);}).catch(error=>{console.error('Atlas world startup failed:',error);showToast(error.message||'The valley could not load. Check the browser console and restart the local server.');});
 requestAnimationFrame(animate);
