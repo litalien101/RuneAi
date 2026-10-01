@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { FixedStepRunner, NetworkSimulator, SnapshotBuffer, acknowledgeInputs, integrateMovement, walkablePosition } from './network.js';
+import { FixedStepRunner, NetworkSimulator, SnapshotBuffer, acknowledgeInputs, integrateMovement, integrateVerticalMovement, walkablePosition } from './network.js';
 import { InputManager } from './input/input_manager.js';
 import { ThirdPersonCamera } from './camera/third_person_camera.js';
 
@@ -82,6 +82,8 @@ let toastTimer = 0;
 let clickPointer = null;
 let positionCorrection = { x: 0, z: 0 };
 let predictedVelocity = { x: 0, z: 0 };
+let verticalMotion = { height: 0, velocity: 0, grounded: true, jumpBuffer: 0, coyoteTime: .1 };
+let verticalCorrection = 0;
 let sessionToken = sessionStorage.getItem('atlas.local.session') || '';
 let sessionRecovery = null;
 const network = new NetworkSimulator(undefined, undefined, authenticatedFetch);
@@ -106,6 +108,7 @@ let nextSnapshotPollAt = 0;
 let snapshotPollPending = false;
 let walkWeight = 0;
 let runWeight = 0;
+let jumpWeight = 0;
 let lastFrameTime = 0;
 let targetPlayerYaw = 0;
 let gaitPhase = 0;
@@ -387,11 +390,18 @@ function applyState(state) {
     if(!remote){
       const avatar=makeCharacter(traveler.name==='Pathfinder'?'player2':'player');
       avatar.position.set(traveler.x,0,traveler.y);world.add(avatar);
-      remote={avatar,snapshots:new SnapshotBuffer(24),latest:{x:traveler.x,z:traveler.y}};
+      remote={avatar,snapshots:new SnapshotBuffer(24),lastTick:-1,gaitPhase:0,walkWeight:0,runWeight:0,jumpWeight:0,
+        latest:{x:traveler.x,z:traveler.y,height:traveler.height||0}};
       otherTravelers.set(traveler.id,remote);
     }
-    remote.latest={x:traveler.x,z:traveler.y};
-    remote.snapshots.add({time:receivedAt,x:traveler.x,z:traveler.y});
+    remote.latest={x:traveler.x,z:traveler.y,height:traveler.height||0};
+    const tick=traveler.last_processed_input??receivedAt;
+    if(tick!==remote.lastTick){
+      remote.lastTick=tick;
+      remote.snapshots.add({time:receivedAt,x:traveler.x,z:traveler.y,height:traveler.height||0,
+        vx:traveler.vx||0,vz:traveler.vz||0,vertical_velocity:traveler.vertical_velocity||0,
+        grounded:traveler.grounded!==false});
+    }
   }
   for(const [id,remote] of otherTravelers)if(!remoteIds.has(id)){world.remove(remote.avatar);otherTravelers.delete(id);}
   if(state.active_player)$('#region-label').textContent=`${state.active_player.name.toUpperCase()} · LOCAL WORLD`;
@@ -404,6 +414,8 @@ function applyState(state) {
     player.position.set(state.player.x,0,state.player.y);
     predictedPosition.x=previousPredictedPosition.x=state.player.x;
     predictedPosition.z=previousPredictedPosition.z=state.player.y;
+    verticalMotion={height:state.player.height||0,velocity:state.player.vertical_velocity||0,
+      grounded:state.player.grounded!==false,jumpBuffer:0,coyoteTime:.1};
     player.rotation.y=Math.PI;targetPlayerYaw=Math.PI;
     initialStateLoaded=true;
   }else{
@@ -411,6 +423,7 @@ function applyState(state) {
     positionCorrection.z=state.player.y-predictedPosition.z;
     predictedVelocity.x+=(authoritativeVelocity.x-predictedVelocity.x)*.18;
     predictedVelocity.z+=(authoritativeVelocity.z-predictedVelocity.z)*.18;
+    verticalCorrection=(state.player.height||0)-verticalMotion.height;
     const vx=authoritativeVelocity.x,vz=authoritativeVelocity.z;
     if(Math.hypot(vx,vz)>.08)targetPlayerYaw=Math.atan2(vx,vz);
     else if(oldPlayer&&(oldPlayer.x!==state.player.x||oldPlayer.y!==state.player.y))targetPlayerYaw=Math.atan2(state.player.x-oldPlayer.x,state.player.y-oldPlayer.y);
@@ -541,12 +554,16 @@ async function act(action){
         pendingInputs=acknowledgeInputs(pendingInputs,acknowledgedSequence);
       }
       const renderedBeforeCorrection={x:predictedPosition.x,z:predictedPosition.z};
+      const renderedBeforeVertical=verticalMotion.height;
       predictedPosition.x=detail.x;predictedPosition.z=detail.z;
       predictedVelocity.x=detail.vx;predictedVelocity.z=detail.vz;
-      for(const frame of pendingInputs)simulateMovementFrame(frame.input,frame.run,1/60);
+      verticalMotion={height:detail.height||0,velocity:detail.vertical_velocity||0,
+        grounded:detail.grounded!==false,jumpBuffer:detail.jump_buffer||0,coyoteTime:detail.coyote_time??.1};
+      for(const frame of pendingInputs)simulateMovementFrame(frame.input,frame.run,1/60,frame.jump);
       previousPredictedPosition.x=predictedPosition.x;previousPredictedPosition.z=predictedPosition.z;
       positionCorrection.x=renderedBeforeCorrection.x-predictedPosition.x;
       positionCorrection.z=renderedBeforeCorrection.z-predictedPosition.z;
+      verticalCorrection=renderedBeforeVertical-verticalMotion.height;
       correctionDistance=Math.hypot(positionCorrection.x,positionCorrection.z);
       maxCorrectionDistance=Math.max(maxCorrectionDistance,correctionDistance);
       if(correctionDistance>1)largeCorrections++;
@@ -662,7 +679,7 @@ function tickMovement(time){
   }
 }
 
-function simulateMovementFrame(input,run,dt){
+function simulateMovementFrame(input,run,dt,jumpPressed=false){
   const speed=run?4.2:2.5;
   const step=integrateMovement(predictedPosition,predictedVelocity,input,dt,speed);
   if(walkableAt(step.position.x,predictedPosition.z)){
@@ -671,6 +688,7 @@ function simulateMovementFrame(input,run,dt){
   if(walkableAt(predictedPosition.x,step.position.z)){
     predictedPosition.z=step.position.z;predictedVelocity.z=step.velocity.z;
   }else predictedVelocity.z=0;
+  verticalMotion=integrateVerticalMovement(verticalMotion,jumpPressed,dt);
 }
 function updateNetworkHud(time){
   if(time-lastNetworkHudAt<150)return;lastNetworkHudAt=time;
@@ -739,14 +757,15 @@ function animate(time){
     const input=movementInput();
     movementClock.update(delta,stepDelta=>{
       previousPredictedPosition.x=predictedPosition.x;previousPredictedPosition.z=predictedPosition.z;
-      simulateMovementFrame(input,input.run,stepDelta);
-      if(Math.hypot(input.x,input.z)>.001||Math.hypot(predictedVelocity.x,predictedVelocity.z)>.03){
-        const frame={sequence:++movementSequence,timestamp:performance.now(),input:{x:input.x,z:input.z},run:input.run};
+      const jumpPressed=inputManager.justPressed(' ');
+      simulateMovementFrame(input,input.run,stepDelta,jumpPressed);
+      if(Math.hypot(input.x,input.z)>.001||Math.hypot(predictedVelocity.x,predictedVelocity.z)>.03||!verticalMotion.grounded||jumpPressed){
+        const frame={sequence:++movementSequence,timestamp:performance.now(),input:{x:input.x,z:input.z},run:input.run,jump:jumpPressed};
         pendingInputs.push(frame);outgoingInputs.push(frame);
       }
     });
     const renderAlpha=movementClock.alpha();
-    positionCorrection.x*=Math.exp(-7*delta);positionCorrection.z*=Math.exp(-7*delta);
+    positionCorrection.x*=Math.exp(-7*delta);positionCorrection.z*=Math.exp(-7*delta);verticalCorrection*=Math.exp(-9*delta);
     player.position.x=previousPredictedPosition.x+(predictedPosition.x-previousPredictedPosition.x)*renderAlpha+positionCorrection.x;
     player.position.z=previousPredictedPosition.z+(predictedPosition.z-previousPredictedPosition.z)*renderAlpha+positionCorrection.z;
     tickMovement(time);
@@ -764,9 +783,13 @@ function animate(time){
     gaitPhase+=speed/(1.28+.38*runWeight)*Math.PI*2*delta;
     const gait=moving?Math.sin(gaitPhase):0;
     const playerParts=player.userData.parts;
-    playerParts.legL.rotation.x=gait*.62*walkWeight;playerParts.legR.rotation.x=-gait*.62*walkWeight;
-    playerParts.armL.rotation.x=-gait*.42*walkWeight;playerParts.armR.rotation.x=gait*.42*walkWeight;
-    player.position.y=moving?Math.abs(gait)*(.025+.025*runWeight)*walkWeight:Math.sin(time*.0022)*.012;
+    jumpWeight+=(verticalMotion.grounded?0:1-jumpWeight)*(1-Math.exp(-12*delta));
+    if(verticalMotion.grounded)jumpWeight*=Math.exp(-10*delta);
+    playerParts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*walkWeight,-.42,jumpWeight);
+    playerParts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*walkWeight,.28,jumpWeight);
+    playerParts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*walkWeight,-1.0,jumpWeight);
+    playerParts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*walkWeight,-1.0,jumpWeight);
+    player.position.y=verticalMotion.height+verticalCorrection+(moving&&verticalMotion.grounded?Math.abs(gait)*(.025+.025*runWeight)*walkWeight:0);
     cameraController.update(delta,player.position,inputManager.cameraIntent());
     camera.position.y+=Math.sin(gaitPhase*2)*.018*walkWeight;
     skyDome.position.copy(camera.position);
@@ -790,7 +813,19 @@ function animate(time){
   for(const remote of otherTravelers.values()){
     const sample=remote.snapshots.at(remoteRenderTime)||remote.latest;
     remote.avatar.position.x=sample.x;remote.avatar.position.z=sample.z;
-    remote.avatar.position.y=.008*Math.sin(time*.002+sample.x);
+    remote.avatar.position.y=(sample.height||0)+(sample.grounded===false?0:.008*Math.sin(time*.002+sample.x));
+    const speed=Math.hypot(sample.vx||0,sample.vz||0);
+    if(speed>.08){const yaw=Math.atan2(sample.vx,sample.vz);const difference=Math.atan2(Math.sin(yaw-remote.avatar.rotation.y),Math.cos(yaw-remote.avatar.rotation.y));remote.avatar.rotation.y+=difference*(1-Math.exp(-12*frameDelta));}
+    remote.walkWeight+=((speed>.08?1:0)-remote.walkWeight)*(1-Math.exp(-10*frameDelta));
+    const running=speed>2.85;
+    remote.runWeight+=((running?1:0)-remote.runWeight)*(1-Math.exp(-8*frameDelta));
+    remote.jumpWeight+=((sample.grounded===false?1:0)-remote.jumpWeight)*(1-Math.exp(-10*frameDelta));
+    remote.gaitPhase+=speed/(1.28+.38*remote.runWeight)*Math.PI*2*frameDelta;
+    const gait=remote.walkWeight>.025?Math.sin(remote.gaitPhase):0,parts=remote.avatar.userData.parts;
+    parts.legL.rotation.x=THREE.MathUtils.lerp(gait*.62*remote.walkWeight,-.42,remote.jumpWeight);
+    parts.legR.rotation.x=THREE.MathUtils.lerp(-gait*.62*remote.walkWeight,.28,remote.jumpWeight);
+    parts.armL.rotation.x=THREE.MathUtils.lerp(-gait*.42*remote.walkWeight,-1.0,remote.jumpWeight);
+    parts.armR.rotation.x=THREE.MathUtils.lerp(gait*.42*remote.walkWeight,-1.0,remote.jumpWeight);
   }
   renderer.render(scene,camera);
 }

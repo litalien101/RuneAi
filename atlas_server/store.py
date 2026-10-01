@@ -208,6 +208,9 @@ class WorldStore:
             {"id": pid, "name": player_row["player_name"], "x": saved["player"]["x"],
              "y": saved["player"]["y"], "vx": saved["player"].get("vx", 0.0),
              "vz": saved["player"].get("vz", 0.0), "last_processed_input": player_row["last_tick"],
+             "height": saved["player"].get("height", 0.0),
+             "vertical_velocity": saved["player"].get("vy", 0.0),
+             "grounded": saved["player"].get("grounded", True),
              "is_self": pid == player_id}
             for pid, (player_row, saved) in players_by_id.items()
         ]
@@ -290,18 +293,26 @@ class WorldStore:
                         if not isinstance(frame, dict) or frame.get("sequence") != expected_tick:
                             raise ValueError("Movement frame sequence is invalid or contains a gap.")
                         frame_input = normalize_movement(frame.get("input"), frame.get("run"))
-                        normalized_frames.append({"sequence": expected_tick, "input": frame_input, "run": frame["run"]})
+                        jump = frame.get("jump", False)
+                        if not isinstance(jump, bool):
+                            raise ValueError("Jump input must be boolean.")
+                        normalized_frames.append({"sequence": expected_tick, "input": frame_input,
+                                                  "run": frame["run"], "jump": jump})
                         expected_tick += 1
                     if normalized_frames[-1]["sequence"] != input_sequence:
                         raise ValueError("Movement acknowledgement must match the final frame.")
                     movement_frames = normalized_frames
                     final_frame = movement_frames[-1]
                     requested_input, requested_run = final_frame["input"], final_frame["run"]
-                    action = {**action, "input": requested_input, "run": requested_run}
+                    requested_jump = final_frame["jump"]
+                    action = {**action, "input": requested_input, "run": requested_run, "jump": requested_jump}
                 else:
                     now = time.monotonic()
                     requested_input = normalize_movement(action.get("input"), action.get("run", False))
                     requested_run = action.get("run", False)
+                    requested_jump = action.get("jump", False)
+                    if not isinstance(requested_jump, bool):
+                        raise ValueError("Jump input must be boolean.")
                     elapsed = min(max(now - runtime["last_sim_tick"], 0.0), 0.33)
                     runtime["last_sim_tick"] = now
                     accumulated = runtime["sim_accumulator"] + elapsed
@@ -331,6 +342,7 @@ class WorldStore:
                 state, event_type, payload = state, "PlayerMoved", {}
                 for frame in movement_frames:
                     frame_action = {"type": "move", "input": frame["input"], "run": frame["run"],
+                                    "jump": frame["jump"],
                                     "_sim_input": frame["input"], "_sim_run": frame["run"], "dt": 1.0 / 60.0,
                                     "_obstacles": collision_obstacles}
                     state, event_type, payload = apply_action(state, frame_action)

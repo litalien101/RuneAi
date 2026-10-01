@@ -19,6 +19,7 @@ This milestone supports two travelers connected to one loopback server. It prove
 ## Tick and persistence rules
 
 - Movement frame sequence is a per-player server tick. Player 1 and Player 2 may both submit tick 1; a player may not reuse another player's acknowledgement or history.
+- A movement frame carries normalized horizontal input, run intent, and an edge-triggered jump press. The server advances horizontal and vertical movement at 60 Hz; grounded state, height, vertical velocity, jump buffering, and coyote time are stored with the owning player.
 - A movement batch contains at most 32 contiguous ticks. Duplicate retries return that player's cached acknowledgement; stale or gapped batches are rejected.
 - Player state and the shared world projection are committed in one SQLite transaction with the immutable event. Event actor and subject IDs identify the owning Player entity.
 - The player's last tick is persisted with the player state. On a new session, the browser resumes at the acknowledged tick. Movement events record the tick so projection rebuild restores that acknowledgement. The retry cache and rewind window are process-local and empty after restart.

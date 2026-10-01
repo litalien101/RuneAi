@@ -9,6 +9,10 @@ from .history import HitboxSnapshot, validate_melee_hit
 
 WIDTH, HEIGHT = 20, 14
 START = (3, 10)
+JUMP_SPEED = 5.2
+JUMP_GRAVITY = 16.0
+JUMP_BUFFER_SECONDS = 0.12
+COYOTE_SECONDS = 0.10
 PLAYER_ENTITY_ID = "9163de5b-b156-5d5e-bb43-f371650c4998"
 SECOND_PLAYER_ENTITY_ID = "70968bb0-4c0a-52ad-94ea-3f4f6f1368b2"
 PLAYER_ENTITY_IDS = (PLAYER_ENTITY_ID, SECOND_PLAYER_ENTITY_ID)
@@ -119,7 +123,9 @@ WORLD_OBSTACLES = _world_obstacles()
 
 def initial_state() -> dict[str, Any]:
     return {
-        "player": {"x": float(START[0]), "y": float(START[1]), "vx": 0.0, "vz": 0.0},
+        "player": {"x": float(START[0]), "y": float(START[1]), "vx": 0.0, "vz": 0.0,
+                   "height": 0.0, "vy": 0.0, "grounded": True,
+                   "jump_buffer": 0.0, "coyote_time": COYOTE_SECONDS},
         "inventory": {"lumen_reed": 0},
         "gathered": [],
         "mara_met": False,
@@ -172,7 +178,10 @@ def public_state(state: dict[str, Any], events: list[dict[str, Any]]) -> dict[st
         "height": HEIGHT,
         "terrain": TERRAIN,
         "obstacles": WORLD_OBSTACLES,
-        "player": {"x": state["player"]["x"], "y": state["player"]["y"]},
+        "player": {"x": state["player"]["x"], "y": state["player"]["y"],
+                   "height": state["player"].get("height", 0.0),
+                   "vertical_velocity": state["player"].get("vy", 0.0),
+                   "grounded": state["player"].get("grounded", True)},
         "velocity": {"x": state["player"].get("vx", 0.0), "z": state["player"].get("vz", 0.0)},
         "inventory": state["inventory"],
         "gathered": state["gathered"],
@@ -196,8 +205,16 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
     if kind == "move":
         player.setdefault("vx", 0.0)
         player.setdefault("vz", 0.0)
+        player.setdefault("height", 0.0)
+        player.setdefault("vy", 0.0)
+        player.setdefault("grounded", True)
+        player.setdefault("jump_buffer", 0.0)
+        player.setdefault("coyote_time", COYOTE_SECONDS)
         move_input = normalize_movement(action.get("input"), action.get("run", False))
         sim_input = normalize_movement(action.get("_sim_input", move_input), action.get("_sim_run", action.get("run", False)))
+        jump_pressed = action.get("jump", False)
+        if not isinstance(jump_pressed, bool):
+            raise ValueError("Jump input must be boolean.")
         dt = action.get("dt")
         if isinstance(dt, bool) or not isinstance(dt, (int, float)) or not isfinite(dt) or not 0 <= dt <= .35:
             raise ValueError("Movement tick is outside the allowed range.")
@@ -228,11 +245,40 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             else:
                 vz = 0.0
             remaining -= step
+        remaining = dt
+        height, vy = player["height"], player["vy"]
+        grounded = player["grounded"]
+        jump_buffer = JUMP_BUFFER_SECONDS if jump_pressed else player["jump_buffer"]
+        coyote_time = player["coyote_time"]
+        while remaining > 1e-9:
+            step = min(remaining, 1 / 60)
+            if grounded:
+                coyote_time = COYOTE_SECONDS
+            else:
+                coyote_time = max(0.0, coyote_time - step)
+            if jump_buffer > 0 and (grounded or coyote_time > 0):
+                vy = JUMP_SPEED
+                grounded = False
+                jump_buffer = 0.0
+                coyote_time = 0.0
+            jump_buffer = max(0.0, jump_buffer - step)
+            if not grounded:
+                vy -= JUMP_GRAVITY * step
+                height += vy * step
+                if height <= 0.0:
+                    height, vy, grounded = 0.0, 0.0, True
+                    coyote_time = COYOTE_SECONDS
+            remaining -= step
+        player.update(height=height, vy=vy, grounded=grounded,
+                      jump_buffer=jump_buffer, coyote_time=coyote_time)
         if braking and hypot(vx, vz) < 0.035:
             vx = vz = 0.0
         player.update(vx=vx, vz=vz)
         return state, "PlayerMoved", {"x": player["x"], "z": player["y"],
-            "vx": vx, "vz": vz, "running": action.get("_sim_run", action.get("run", False))}
+            "vx": vx, "vz": vz, "height": height, "vertical_velocity": vy,
+            "grounded": grounded, "jump_buffer": jump_buffer, "coyote_time": coyote_time,
+            "jumped": jump_pressed and vy > 0,
+            "running": action.get("_sim_run", action.get("run", False))}
 
     if kind == "attack":
         if action.get("target") != MOSSLING["id"]:
@@ -359,7 +405,12 @@ def replay_event(state: dict[str, Any], event_type: str, payload: dict[str, Any]
     """Apply a recorded event to a fresh projection; this is the replay contract."""
     if event_type == "PlayerMoved":
         state["player"].update(x=payload["x"], y=payload.get("z", payload.get("y", state["player"]["y"])),
-                                vx=payload.get("vx", 0.0), vz=payload.get("vz", 0.0))
+                                vx=payload.get("vx", 0.0), vz=payload.get("vz", 0.0),
+                                height=payload.get("height", 0.0),
+                                vy=payload.get("vertical_velocity", 0.0),
+                                grounded=payload.get("grounded", True),
+                                jump_buffer=payload.get("jump_buffer", 0.0),
+                                coyote_time=payload.get("coyote_time", COYOTE_SECONDS))
     elif event_type == "ResourceGathered":
         patch_id = payload["patch_id"]
         if patch_id not in state["gathered"]:

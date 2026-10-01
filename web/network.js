@@ -94,6 +94,33 @@ export function integrateMovement(position, velocity, input, dt, speed, accelera
   };
 }
 
+export function integrateVerticalMovement(motion, jumpPressed, dt) {
+  let { height = 0, velocity = 0, grounded = true, jumpBuffer = 0, coyoteTime = 0.1 } = motion;
+  let remaining = dt;
+  if (jumpPressed) jumpBuffer = 0.12;
+  while (remaining > 1e-9) {
+    const step = Math.min(remaining, 1 / 60);
+    if (grounded) coyoteTime = 0.1;
+    else coyoteTime = Math.max(0, coyoteTime - step);
+    if (jumpBuffer > 0 && (grounded || coyoteTime > 0)) {
+      velocity = 5.2;
+      grounded = false;
+      jumpBuffer = 0;
+      coyoteTime = 0;
+    }
+    jumpBuffer = Math.max(0, jumpBuffer - step);
+    if (!grounded) {
+      velocity -= 16 * step;
+      height += velocity * step;
+      if (height <= 0) {
+        height = 0; velocity = 0; grounded = true; coyoteTime = 0.1;
+      }
+    }
+    remaining -= step;
+  }
+  return { height, velocity, grounded, jumpBuffer, coyoteTime };
+}
+
 // Keep footprint sampling identical to atlas_server.world.walkable_position.
 // The server remains authoritative; this copy is only for immediate prediction.
 export function walkablePosition(x, z, terrain, width, height, radius = 0.2, obstacles = []) {
@@ -169,34 +196,51 @@ export class SnapshotBuffer {
   }
   at(time) {
     if (!this.items.length) return null;
-    if (this.items.length === 1 || time <= this.items[0].time) {
-      return { x: this.items[0].x, z: this.items[0].z };
-    }
+    if (this.items.length === 1 || time <= this.items[0].time) return this.#pose(this.items[0]);
     for (let i = 0; i < this.items.length - 1; i++) {
       const older = this.items[i], newer = this.items[i + 1];
       if (older.time <= time && time <= newer.time) {
         const span = newer.time - older.time;
         const alpha = span ? (time - older.time) / span : 0;
-        return { x: older.x + (newer.x - older.x) * alpha, z: older.z + (newer.z - older.z) * alpha };
+        const pose = { x: older.x + (newer.x - older.x) * alpha, z: older.z + (newer.z - older.z) * alpha };
+        for (const field of ['height', 'vx', 'vz', 'vertical_velocity']) {
+          if (Number.isFinite(older[field]) && Number.isFinite(newer[field])) {
+            pose[field] = older[field] + (newer[field] - older[field]) * alpha;
+          }
+        }
+        if (older.grounded !== undefined || newer.grounded !== undefined) {
+          pose.grounded = alpha < 1 ? older.grounded : newer.grounded;
+        }
+        return pose;
       }
     }
     // A short, speed-limited extrapolation hides small delivery gaps. Holding the
     // last sample after that avoids predicting through walls during longer stalls.
     const latest = this.items.at(-1);
-    if (this.items.length < 2 || time <= latest.time) return { x: latest.x, z: latest.z };
+    if (this.items.length < 2 || time <= latest.time) return this.#pose(latest);
     const previous = this.items.at(-2);
     const span = latest.time - previous.time;
-    if (span <= 0) return { x: latest.x, z: latest.z };
+    if (span <= 0) return this.#pose(latest);
     const elapsed = Math.min(time - latest.time, 100);
-    const scale = elapsed / span;
-    let vx = (latest.x - previous.x) * scale;
-    let vz = (latest.z - previous.z) * scale;
+    let vx = Number.isFinite(latest.vx) ? latest.vx * elapsed / 1000 : (latest.x - previous.x) * elapsed / span;
+    let vz = Number.isFinite(latest.vz) ? latest.vz * elapsed / 1000 : (latest.z - previous.z) * elapsed / span;
     const distance = Math.hypot(vx, vz);
     const maximumDistance = 4.5 * elapsed / 1000;
     if (distance > maximumDistance && distance > 0) {
       vx *= maximumDistance / distance;
       vz *= maximumDistance / distance;
     }
-    return { x: latest.x + vx, z: latest.z + vz };
+    const pose = {...this.#pose(latest), x: latest.x + vx, z: latest.z + vz};
+    if (Number.isFinite(latest.height) && Number.isFinite(latest.vertical_velocity)) {
+      pose.height = Math.max(0, latest.height + latest.vertical_velocity * elapsed / 1000);
+    }
+    return pose;
+  }
+  #pose(snapshot) {
+    const pose = {x: snapshot.x, z: snapshot.z};
+    for (const field of ['height', 'vx', 'vz', 'vertical_velocity', 'grounded']) {
+      if (snapshot[field] !== undefined) pose[field] = snapshot[field];
+    }
+    return pose;
   }
 }

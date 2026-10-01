@@ -30,7 +30,7 @@ Each seeded entity has a UUID, registered type, and timezone-aware `created_at`.
 
 | Event type | Ontology relationship | Subject | Object |
 | --- | --- | --- | --- |
-| `PlayerMoved` | No graph edge; the event payload records the authoritative continuous position and velocity | Player | None |
+| `PlayerMoved` | No graph edge; the event payload records the authoritative horizontal position and velocity, height, vertical velocity, grounded state, and movement tick | Player | None |
 | `ResourceGathered` | `gathers` | Player | ResourceNode |
 | `NPCSpokenTo` | `speaks_with` | Player | NPC |
 | `BeaconAwakened` | `awakens` | Player | Building |
