@@ -29,7 +29,7 @@ Run `npm run ci` for deterministic JavaScript network/property-style checks, Pyt
 ## What this proves
 
 - The server validates and applies actions; the browser only renders state and sends intent.
-- Startup validates the seeded Player, NPC, Region, Building, ResourceNode entities and their relationships against `../specs/atlas/specs/atlas-ontology.yaml` and `atlas-schema-registry.yaml`.
+- Startup validates the seeded Player, NPC, Region, Building, ResourceNode entities and their relationships against the bundled Atlas ontology and schema registry in `specs/atlas/specs`.
 - Every accepted game event is validated as a registered Atlas `Event` entity and its action relationship is checked against the ontology.
 - World state persists in SQLite.
 - Each accepted action appends an immutable event in the same transaction as the state update.
@@ -53,7 +53,7 @@ The world’s palette, lighting, composition, camera, and sound goals are in [`s
 
 ## Next foundation milestone
 
-Before true online multiplayer, define account/session boundaries and extend the local tick-batch model to per-player server ticks and a persistent transport. Colyseus remains deferred until that multiplayer milestone. Rapier was evaluated but is not part of the movement stack: the current scene has a small static grid, and introducing separate JS/Python physics bindings would add version and parity risk without solving a current obstacle-collision requirement. Revisit it when the world gains authored 3D colliders, slopes, or moving rigid bodies. Keep ontology, evidence, and policy contracts in `../specs/atlas/specs` authoritative; this demo's small game schema does not replace them.
+Before true online multiplayer, define account/session boundaries and extend the local tick-batch model to per-player server ticks and a persistent transport. Colyseus remains deferred until that multiplayer milestone. Rapier was evaluated but is not part of the movement stack: the current scene has a small static grid, and introducing separate JS/Python physics bindings would add version and parity risk without solving a current obstacle-collision requirement. Revisit it when the world gains authored 3D colliders, slopes, or moving rigid bodies. The bundled ontology and schema registry are the contracts this game slice validates; they do not replace the broader Atlas evidence and policy contracts.
 
 ## License policy
 

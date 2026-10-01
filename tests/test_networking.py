@@ -11,7 +11,7 @@ from atlas_server.world import WORLD_OBSTACLES, TERRAIN, apply_action, initial_s
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPECS = ROOT.parent / "specs" / "atlas" / "specs"
+SPECS = ROOT / "specs" / "atlas" / "specs"
 
 
 class MovementSequenceTests(unittest.TestCase):

@@ -15,7 +15,7 @@ from .world import public_state
 ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 DATA = Path(os.environ.get("ATLAS_DATA_DIR", ROOT / "data"))
-SPECS = ROOT.parent / "specs" / "atlas" / "specs"
+SPECS = ROOT / "specs" / "atlas" / "specs"
 MAX_BODY = 4096
 
 class Handler(BaseHTTPRequestHandler):
