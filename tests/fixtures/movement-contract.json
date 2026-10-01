@@ -1,0 +1,25 @@
+{
+  "fixed_hz": 60,
+  "start": { "x": 3, "z": 10 },
+  "segments": [
+    { "ticks": 60, "input": { "x": 1, "z": 0 }, "run": false },
+    { "ticks": 30, "input": { "x": 0.7071067811865476, "z": -0.7071067811865476 }, "run": true },
+    { "ticks": 90, "input": { "x": 0, "z": 0 }, "run": false }
+  ],
+  "expected": {
+    "position": { "x": 6.820484971346349, "z": 8.678948965013289 },
+    "velocity": { "x": 0, "z": 0 }
+  },
+  "walkability": [
+    { "x": 1, "z": 1, "walkable": true },
+    { "x": 0.5, "z": 1, "walkable": false },
+    { "x": 18, "z": 12, "walkable": true },
+    { "x": 19, "z": 12, "walkable": false }
+  ],
+  "obstacleCollisions": [
+    { "x": 5, "z": 1, "obstacle": { "x": 5, "z": 1, "radius": 0.2 }, "walkable": false },
+    { "x": 5.45, "z": 1, "obstacle": { "x": 5, "z": 1, "radius": 0.2 }, "walkable": true },
+    { "x": 7, "z": 7, "obstacle": { "x": 7, "z": 7, "radius": 0.29 }, "walkable": false },
+    { "x": 15, "z": 4, "obstacle": { "x": 15, "z": 4, "radius": 0.62 }, "walkable": false }
+  ]
+}
