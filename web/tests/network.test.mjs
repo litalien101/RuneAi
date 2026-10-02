@@ -8,6 +8,20 @@ import {
 } from '../network.js';
 
 const movementContract = JSON.parse(readFileSync(fileURLToPath(new URL('../../tests/fixtures/movement-contract.json', import.meta.url)), 'utf8'));
+const WORLD_WIDTH = 40;
+const WORLD_HEIGHT = 14;
+const BASE_TERRAIN = [
+  '~~~~~~~~~~~~~~~~~~~~', '~....g.......g.....~', '~...gg......gg.....~',
+  '~......g...........~', '~.....g.......g....~', '~...ggg........g...~',
+  '~....g......ggg....~', '~..................~', '~..gg......g.......~',
+  '~...g......g..gg...~', '~..........g.......~', '~......g...........~',
+  '~....ggg......g....~', '~~~~~~~~~~~~~~~~~~~~',
+];
+const VILLAGE_GREEN_PATCHES = new Set(['20,1', '37,1', '20,10', '21,11', '27,12', '33,11', '38,10']);
+const WORLD_TERRAIN = BASE_TERRAIN.map((row, z) => row === '~'.repeat(20)
+  ? '~'.repeat(WORLD_WIDTH)
+  : row.slice(0, -1) + Array.from({ length: WORLD_WIDTH - 20 }, (_, index) =>
+    VILLAGE_GREEN_PATCHES.has(`${index + 19},${z}`) ? 'g' : '.').join('') + '~');
 
 test('fake clock delivers queued packets only when their deadline is reached', () => {
   const clock = new FakeClock(), network = new DeterministicNetworkQueue(clock, 7);
@@ -166,27 +180,13 @@ test('browser jump trajectory follows the shared server movement contract', () =
 });
 
 test('browser terrain footprint matches the shared collision contract', () => {
-  const terrain = [
-    '~~~~~~~~~~~~~~~~~~~~', '~....g.......g.....~', '~...gg......gg.....~',
-    '~......g...........~', '~.....g.......g....~', '~...ggg........g...~',
-    '~....g......ggg....~', '~..................~', '~..gg......g.......~',
-    '~...g......g..gg...~', '~..........g.......~', '~......g...........~',
-    '~....ggg......g....~', '~~~~~~~~~~~~~~~~~~~~',
-  ];
   for (const sample of movementContract.walkability) {
-    assert.equal(walkablePosition(sample.x, sample.z, terrain, 20, 14), sample.walkable);
+    assert.equal(walkablePosition(sample.x, sample.z, WORLD_TERRAIN, WORLD_WIDTH, WORLD_HEIGHT), sample.walkable);
   }
 });
 
 test('browser circular colliders reject solid props and leave clearance around them', () => {
-  const terrain = [
-    '~~~~~~~~~~~~~~~~~~~~', '~....g.......g.....~', '~...gg......gg.....~',
-    '~......g...........~', '~.....g.......g....~', '~...ggg........g...~',
-    '~....g......ggg....~', '~..................~', '~..gg......g.......~',
-    '~...g......g..gg...~', '~..........g.......~', '~......g...........~',
-    '~....ggg......g....~', '~~~~~~~~~~~~~~~~~~~~',
-  ];
   for (const sample of movementContract.obstacleCollisions) {
-    assert.equal(walkablePosition(sample.x, sample.z, terrain, 20, 14, .2, [sample.obstacle]), sample.walkable);
+    assert.equal(walkablePosition(sample.x, sample.z, WORLD_TERRAIN, WORLD_WIDTH, WORLD_HEIGHT, .2, [sample.obstacle]), sample.walkable);
   }
 });

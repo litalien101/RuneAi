@@ -90,6 +90,8 @@ class AtlasContracts:
         if missing:
             raise ContractError(f"Entity is missing required fields: {', '.join(missing)}")
         entity_type = entity.get("type")
+        if not isinstance(entity_type, str):
+            raise ContractError("Entity type must be a registered string")
         if entity_type not in self.registered_types:
             raise ContractError(f"Entity type is not registered: {entity_type!r}")
         try:
@@ -115,6 +117,10 @@ class AtlasContracts:
             raise ContractError(f"{entity_type} is missing ontology fields: {sorted(missing_specific)}")
 
     def validate_relationship(self, relation_type: str, source_type: str, target_type: str) -> None:
+        if not isinstance(relation_type, str):
+            raise ContractError("Relationship type must be a declared string")
+        if not isinstance(source_type, str) or not isinstance(target_type, str):
+            raise ContractError("Relationship endpoints must have registered entity types")
         definition = self.relationships.get(relation_type)
         if definition is None:
             raise ContractError(f"Relationship type is not declared: {relation_type!r}")
@@ -123,7 +129,8 @@ class AtlasContracts:
         if not any(self._is_subtype(target_type, allowed) for allowed in definition["target_types"]):
             raise ContractError(f"{target_type} cannot be the target of {relation_type}")
 
-    def validate_event(self, event: dict[str, Any], relation_type: str | None = None) -> None:
+    def validate_event(self, event: dict[str, Any], relation_type: str | None = None,
+                       entity_types: dict[str, str] | None = None) -> None:
         self.validate_entity({
             "id": event["event_id"],
             "type": "Event",
@@ -134,25 +141,40 @@ class AtlasContracts:
             raise ContractError("Unsupported world event schema version")
         if not event.get("actor_id") or not event.get("source_kind") or not event.get("source_identifier"):
             raise ContractError("World events require an actor and source reference")
-        actor = self.entity_by_id.get(event.get("actor_id"))
-        if actor is None or not self._is_subtype(actor.get("type", ""), "Player"):
-            raise ContractError("The event actor must resolve to a registered Player entity")
+        known_types = {entity_id: entity["type"] for entity_id, entity in self.entity_by_id.items()}
+        if entity_types:
+            known_types.update(entity_types)
+        actor_type = known_types.get(event.get("actor_id"), "")
+        creator_event = event.get("event_type") in {"EntityCreated", "RelationshipEstablished"}
+        if creator_event:
+            if actor_type != "Creator":
+                raise ContractError("World-authoring events must be performed by a registered Creator entity")
+            if event["event_type"] == "EntityCreated" and event.get("subject_id") != event.get("actor_id"):
+                raise ContractError("EntityCreated subject must be the registered Creator actor")
+            if event["event_type"] == "RelationshipEstablished" and event.get("subject_id") == event.get("actor_id"):
+                raise ContractError("RelationshipEstablished subject must be the relationship source entity")
+        elif not self._is_subtype(actor_type, "Player"):
+            raise ContractError("Gameplay event actor must resolve to a registered Player entity")
         try:
-            UUID(event["source_identifier"])
+            source_identifier = str(UUID(event["source_identifier"]))
         except (ValueError, TypeError, KeyError) as exc:
             raise ContractError("World event source identifier must be a UUID") from exc
+        if source_identifier != event["source_identifier"]:
+            raise ContractError("World event source identifier must use canonical UUID formatting")
         if not event.get("rationale"):
             raise ContractError("World events require a rationale")
-        if event.get("subject_id") != event.get("actor_id"):
+        if event.get("subject_id") not in known_types:
+            raise ContractError("World event subject must resolve to a registered entity")
+        if not creator_event and event.get("subject_id") != event.get("actor_id"):
             raise ContractError("The event subject must match the registered player actor")
-        if event.get("object_id") is not None and event["object_id"] not in self.entity_by_id:
+        if event.get("object_id") is not None and event["object_id"] not in known_types:
             raise ContractError("World event object reference does not resolve to a validated entity")
         if relation_type is not None:
-            source = self.entity_by_id.get(event["subject_id"])
-            target = self.entity_by_id.get(event.get("object_id"))
-            if source is None or target is None:
+            source_type = known_types.get(event["subject_id"])
+            target_type = known_types.get(event.get("object_id"))
+            if source_type is None or target_type is None:
                 raise ContractError("Relationship event refers to an entity outside the validated world")
-            self.validate_relationship(relation_type, source["type"], target["type"])
+            self.validate_relationship(relation_type, source_type, target_type)
 
     def _required_fields(self, entity_type: str) -> set[str]:
         required = {field for field, definition in self.registry.get("schema_requirements", {}).items()

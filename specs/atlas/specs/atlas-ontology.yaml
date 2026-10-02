@@ -9,6 +9,9 @@ entities:
       - type
       - created_at
 
+  Creator:
+    parent: Entity
+
   Character:
     parent: Entity
 

@@ -156,7 +156,13 @@ export function walkablePosition(x, z, terrain, width, height, radius = 0.2, obs
     const cellZ = pz < 0 ? Math.floor(pz) : Math.floor(pz + 0.5);
     return cellX >= 0 && cellX < width && cellZ >= 0 && cellZ < height && terrain[cellZ][cellX] !== '~';
   })) return false;
-  return obstacles.every(obstacle => Math.hypot(x - obstacle.x, z - obstacle.z) >= radius + obstacle.radius);
+  return obstacles.every(obstacle => {
+    if (obstacle.shape === 'box') {
+      return Math.abs(x - obstacle.x) >= radius + obstacle.half_width ||
+        Math.abs(z - obstacle.z) >= radius + obstacle.half_depth;
+    }
+    return Math.hypot(x - obstacle.x, z - obstacle.z) >= radius + obstacle.radius;
+  });
 }
 
 export class FixedStepRunner {

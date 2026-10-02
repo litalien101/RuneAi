@@ -2,6 +2,8 @@ import math
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
+from uuid import uuid4
 from pathlib import Path
 
 from atlas_server.contracts import AtlasContracts
@@ -9,7 +11,8 @@ from atlas_server.history import EntityHistory, HitboxSnapshot, validate_melee_h
 from atlas_server.store import WorldStore
 from atlas_server.world import (
     COYOTE_SECONDS, JUMP_BUFFER_SECONDS, JUMP_GRAVITY, JUMP_SPEED,
-    PLAYER_ENTITY_ID, PLAYER_ENTITY_IDS, WORLD_OBSTACLES, TERRAIN,
+    CREATOR_ENTITY_ID, PLAYER_ENTITY_ID, PLAYER_ENTITY_IDS, REGION_ENTITY_ID,
+    WORLD_ENTITY_IDS, WORLD_OBSTACLES, TERRAIN,
     apply_action, initial_state, walkable_position,
 )
 
@@ -125,14 +128,15 @@ class MovementSequenceTests(unittest.TestCase):
         for sample in fixture["walkability"]:
             self.assertEqual(walkable_position(sample["x"], sample["z"]), sample["walkable"])
 
-    def test_server_circular_colliders_match_shared_collision_contract(self):
+    def test_server_character_sandbox_uses_only_flat_walkable_ground(self):
         fixture = json.loads((ROOT / "tests" / "fixtures" / "movement-contract.json").read_text())
+        self.assertEqual(len(TERRAIN), 14)
+        self.assertTrue(all(len(row) == 40 for row in TERRAIN))
         for sample in fixture["obstacleCollisions"]:
             self.assertEqual(walkable_position(sample["x"], sample["z"], obstacles=[sample["obstacle"]]),
                              sample["walkable"])
-        self.assertEqual(sum(obstacle["kind"] == "tree" for obstacle in WORLD_OBSTACLES), 16)
-        self.assertEqual({obstacle["kind"] for obstacle in WORLD_OBSTACLES if obstacle["kind"] != "tree"},
-                         {"npc", "beacon", "creature"})
+        self.assertEqual(WORLD_OBSTACLES, [])
+        self.assertTrue(all(set(row) == {"."} for row in TERRAIN))
 
     def test_recent_server_recorded_position_can_rewind_a_late_melee_attack(self):
         import time
@@ -191,6 +195,103 @@ class MovementSequenceTests(unittest.TestCase):
         self.assertEqual(first["inventory"]["lumen_reed"], 1)
         self.assertEqual(second["inventory"]["lumen_reed"], 0)
         self.assertIn("reed-west", first["gathered"])
+
+    def test_ontology_world_relationships_are_persisted_and_explainable(self):
+        graph = self.store.query_knowledge(relation_type="located_in")
+        self.assertEqual(len(graph["relationships"]), 4)
+        self.assertTrue(all(edge["event_id"] is None for edge in graph["relationships"]))
+        self.assertTrue(all(edge["rationale"] for edge in graph["relationships"]))
+        self.assertEqual({entity["type"] for entity in graph["entities"]}, {"Player", "NPC", "Creature", "Region"})
+
+    def test_action_relationship_and_memory_survive_reopen_and_projection_rebuild(self):
+        player_id = PLAYER_ENTITY_IDS[0]
+        resource_id = WORLD_ENTITY_IDS["reed-west"]
+        with self.store.connect() as db:
+            row = db.execute("SELECT state_json FROM player_states WHERE player_id = ?", (player_id,)).fetchone()
+            personal = json.loads(row["state_json"])
+            personal["player"].update(x=5.0, y=5.8)
+            db.execute("UPDATE player_states SET state_json = ? WHERE player_id = ?",
+                       (json.dumps(personal), player_id))
+
+        event = self.store.command({"type": "interact", "target": "reed-west"}, player_id)
+        graph = self.store.query_knowledge(source_id=player_id, target_id=resource_id, relation_type="gathers")
+        self.assertEqual(len(graph["relationships"]), 1)
+        edge = graph["relationships"][0]
+        self.assertEqual(edge["event_id"], event["event_id"])
+        self.assertEqual(edge["actor_id"], player_id)
+        self.assertIn("gathered", edge["rationale"])
+
+        history = self.store.query_memory(entity_id=resource_id)
+        self.assertEqual([item["event_id"] for item in history], [event["event_id"]])
+        self.assertEqual(history[0]["rationale"], edge["rationale"])
+
+        reopened = WorldStore(self.store.path, AtlasContracts(SPECS))
+        reopened.rebuild_projection()
+        restored = reopened.query_knowledge(source_id=player_id, target_id=resource_id, relation_type="gathers")
+        self.assertEqual(restored["relationships"][0]["event_id"], event["event_id"])
+        self.assertEqual(reopened.query_memory(entity_id=resource_id)[0]["event_id"], event["event_id"])
+
+    def test_creator_authored_entity_relationship_and_explanation_are_atomic_and_durable(self):
+        source = {"kind": "creator_edit", "identifier": str(uuid4())}
+        npc = {"id": str(uuid4()), "type": "NPC",
+               "created_at": datetime.now(timezone.utc).isoformat(), "name": "Ilyra the Cartographer"}
+        created = self.store.create_entity(
+            npc, source_kind=source["kind"], source_identifier=source["identifier"],
+            rationale="Added Ilyra to provide a route into the eastern village.",
+        )
+        linked = self.store.create_relationship(
+            "located_in", npc["id"], REGION_ENTITY_ID, source_kind=source["kind"],
+            source_identifier=source["identifier"],
+            rationale="Ilyra works from the Valley of First Light while mapping its roads.",
+        )
+        analytics_first_page = self.store.query_analytics(limit=1)
+        self.assertEqual(analytics_first_page["window"]["event_count"], 1)
+        self.assertTrue(analytics_first_page["window"]["has_more"])
+        analytics_second_page = self.store.query_analytics(
+            after_sequence=analytics_first_page["window"]["through_sequence"], limit=1)
+        self.assertEqual(analytics_second_page["activity"]["events_by_type"], {"RelationshipEstablished": 1})
+        self.assertFalse(analytics_second_page["window"]["has_more"])
+        explanation = self.store.query_knowledge(
+            source_id=npc["id"], target_id=REGION_ENTITY_ID, relation_type="located_in")
+        edge = next(edge for edge in explanation["relationships"] if edge["event_id"] == linked["event_id"])
+        self.assertEqual(edge["actor_id"], CREATOR_ENTITY_ID)
+        self.assertEqual(edge["source"], source)
+        self.assertEqual(edge["rationale"], linked["rationale"])
+        self.assertIn(npc, [{"id": entity["id"], "type": entity["type"],
+                             "created_at": entity["created_at"], **entity["attributes"]}
+                            for entity in explanation["entities"]])
+
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.store.create_entity(npc, source_kind=source["kind"], source_identifier=source["identifier"],
+                                     rationale="Duplicate entity")
+        with self.assertRaisesRegex(ValueError, "already exists"):
+            self.store.create_relationship("located_in", npc["id"], REGION_ENTITY_ID,
+                                           source_kind=source["kind"], source_identifier=source["identifier"],
+                                           rationale="Duplicate relationship")
+        with self.assertRaises(ValueError):
+            self.store.create_relationship("not_declared", npc["id"], REGION_ENTITY_ID,
+                                           source_kind=source["kind"], source_identifier=source["identifier"],
+                                           rationale="Invalid ontology edge")
+        malformed = {**npc, "id": str(uuid4()), "type": "UnregisteredType"}
+        with self.assertRaisesRegex(ValueError, "not registered"):
+            self.store.create_entity(malformed, source_kind=source["kind"],
+                                     source_identifier=source["identifier"], rationale="Invalid entity type")
+        with self.store.connect() as db:
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM world_events").fetchone()[0], 2)
+            import sqlite3
+            with self.assertRaises(sqlite3.IntegrityError):
+                db.execute("UPDATE knowledge_relationships SET rationale = 'tampered' WHERE source_event_id = ?",
+                           (linked["event_id"],))
+
+        reopened = WorldStore(self.store.path, AtlasContracts(SPECS))
+        rebuilt = reopened.rebuild_projection()
+        self.assertTrue(rebuilt)
+        restored = reopened.query_knowledge(source_id=npc["id"], target_id=REGION_ENTITY_ID,
+                                            relation_type="located_in")
+        self.assertEqual(len(restored["relationships"]), 1)
+        self.assertEqual(restored["relationships"][0]["event_id"], linked["event_id"])
+        self.assertEqual([event["event_id"] for event in reopened.query_memory(entity_id=npc["id"])],
+                         [created["event_id"], linked["event_id"]])
 
     def test_other_traveler_is_a_shared_solid_movement_collider(self):
         other_id = PLAYER_ENTITY_IDS[1]

@@ -1,0 +1,355 @@
+{
+  "schema": "atlas-character/v1",
+  "asset_id": "atlas.female_base_v1",
+  "skeleton_id": "ATLAS_HUMANOID_V1",
+  "source_blend": "art/characters/atlas_female_base_v1/female_base_source.blend",
+  "source_sha256": "370348a5e1824310bc2000760af855be048ff67aad97cdb4152674b492147445",
+  "runtime_glb": "web/assets/characters/female_base_atlas_v1.glb",
+  "runtime_sha256": "2a114cc76dd0d2f4d7c83ec30d99fb875d4917203562a5d483084ef30c0dd3bb",
+  "body_object": "ATLAS_FEMALE_BODY_V1",
+  "mesh_vertices": 15186,
+  "bone_count": 67,
+  "bones": [
+    {
+      "name": "mixamorig:Hips",
+      "parent": null
+    },
+    {
+      "name": "mixamorig:Spine",
+      "parent": "mixamorig:Hips"
+    },
+    {
+      "name": "mixamorig:Spine1",
+      "parent": "mixamorig:Spine"
+    },
+    {
+      "name": "mixamorig:Spine2",
+      "parent": "mixamorig:Spine1"
+    },
+    {
+      "name": "mixamorig:Neck",
+      "parent": "mixamorig:Spine2"
+    },
+    {
+      "name": "mixamorig:Head",
+      "parent": "mixamorig:Neck"
+    },
+    {
+      "name": "mixamorig:HeadTop_End",
+      "parent": "mixamorig:Head"
+    },
+    {
+      "name": "mixamorig:LeftEye",
+      "parent": "mixamorig:Head"
+    },
+    {
+      "name": "mixamorig:RightEye",
+      "parent": "mixamorig:Head"
+    },
+    {
+      "name": "mixamorig:LeftShoulder",
+      "parent": "mixamorig:Spine2"
+    },
+    {
+      "name": "mixamorig:LeftArm",
+      "parent": "mixamorig:LeftShoulder"
+    },
+    {
+      "name": "mixamorig:LeftForeArm",
+      "parent": "mixamorig:LeftArm"
+    },
+    {
+      "name": "mixamorig:LeftHand",
+      "parent": "mixamorig:LeftForeArm"
+    },
+    {
+      "name": "mixamorig:LeftHandThumb1",
+      "parent": "mixamorig:LeftHand"
+    },
+    {
+      "name": "mixamorig:LeftHandThumb2",
+      "parent": "mixamorig:LeftHandThumb1"
+    },
+    {
+      "name": "mixamorig:LeftHandThumb3",
+      "parent": "mixamorig:LeftHandThumb2"
+    },
+    {
+      "name": "mixamorig:LeftHandThumb4",
+      "parent": "mixamorig:LeftHandThumb3"
+    },
+    {
+      "name": "mixamorig:LeftHandIndex1",
+      "parent": "mixamorig:LeftHand"
+    },
+    {
+      "name": "mixamorig:LeftHandIndex2",
+      "parent": "mixamorig:LeftHandIndex1"
+    },
+    {
+      "name": "mixamorig:LeftHandIndex3",
+      "parent": "mixamorig:LeftHandIndex2"
+    },
+    {
+      "name": "mixamorig:LeftHandIndex4",
+      "parent": "mixamorig:LeftHandIndex3"
+    },
+    {
+      "name": "mixamorig:LeftHandMiddle1",
+      "parent": "mixamorig:LeftHand"
+    },
+    {
+      "name": "mixamorig:LeftHandMiddle2",
+      "parent": "mixamorig:LeftHandMiddle1"
+    },
+    {
+      "name": "mixamorig:LeftHandMiddle3",
+      "parent": "mixamorig:LeftHandMiddle2"
+    },
+    {
+      "name": "mixamorig:LeftHandMiddle4",
+      "parent": "mixamorig:LeftHandMiddle3"
+    },
+    {
+      "name": "mixamorig:LeftHandRing1",
+      "parent": "mixamorig:LeftHand"
+    },
+    {
+      "name": "mixamorig:LeftHandRing2",
+      "parent": "mixamorig:LeftHandRing1"
+    },
+    {
+      "name": "mixamorig:LeftHandRing3",
+      "parent": "mixamorig:LeftHandRing2"
+    },
+    {
+      "name": "mixamorig:LeftHandRing4",
+      "parent": "mixamorig:LeftHandRing3"
+    },
+    {
+      "name": "mixamorig:LeftHandPinky1",
+      "parent": "mixamorig:LeftHand"
+    },
+    {
+      "name": "mixamorig:LeftHandPinky2",
+      "parent": "mixamorig:LeftHandPinky1"
+    },
+    {
+      "name": "mixamorig:LeftHandPinky3",
+      "parent": "mixamorig:LeftHandPinky2"
+    },
+    {
+      "name": "mixamorig:LeftHandPinky4",
+      "parent": "mixamorig:LeftHandPinky3"
+    },
+    {
+      "name": "mixamorig:RightShoulder",
+      "parent": "mixamorig:Spine2"
+    },
+    {
+      "name": "mixamorig:RightArm",
+      "parent": "mixamorig:RightShoulder"
+    },
+    {
+      "name": "mixamorig:RightForeArm",
+      "parent": "mixamorig:RightArm"
+    },
+    {
+      "name": "mixamorig:RightHand",
+      "parent": "mixamorig:RightForeArm"
+    },
+    {
+      "name": "mixamorig:RightHandThumb1",
+      "parent": "mixamorig:RightHand"
+    },
+    {
+      "name": "mixamorig:RightHandThumb2",
+      "parent": "mixamorig:RightHandThumb1"
+    },
+    {
+      "name": "mixamorig:RightHandThumb3",
+      "parent": "mixamorig:RightHandThumb2"
+    },
+    {
+      "name": "mixamorig:RightHandThumb4",
+      "parent": "mixamorig:RightHandThumb3"
+    },
+    {
+      "name": "mixamorig:RightHandIndex1",
+      "parent": "mixamorig:RightHand"
+    },
+    {
+      "name": "mixamorig:RightHandIndex2",
+      "parent": "mixamorig:RightHandIndex1"
+    },
+    {
+      "name": "mixamorig:RightHandIndex3",
+      "parent": "mixamorig:RightHandIndex2"
+    },
+    {
+      "name": "mixamorig:RightHandIndex4",
+      "parent": "mixamorig:RightHandIndex3"
+    },
+    {
+      "name": "mixamorig:RightHandMiddle1",
+      "parent": "mixamorig:RightHand"
+    },
+    {
+      "name": "mixamorig:RightHandMiddle2",
+      "parent": "mixamorig:RightHandMiddle1"
+    },
+    {
+      "name": "mixamorig:RightHandMiddle3",
+      "parent": "mixamorig:RightHandMiddle2"
+    },
+    {
+      "name": "mixamorig:RightHandMiddle4",
+      "parent": "mixamorig:RightHandMiddle3"
+    },
+    {
+      "name": "mixamorig:RightHandRing1",
+      "parent": "mixamorig:RightHand"
+    },
+    {
+      "name": "mixamorig:RightHandRing2",
+      "parent": "mixamorig:RightHandRing1"
+    },
+    {
+      "name": "mixamorig:RightHandRing3",
+      "parent": "mixamorig:RightHandRing2"
+    },
+    {
+      "name": "mixamorig:RightHandRing4",
+      "parent": "mixamorig:RightHandRing3"
+    },
+    {
+      "name": "mixamorig:RightHandPinky1",
+      "parent": "mixamorig:RightHand"
+    },
+    {
+      "name": "mixamorig:RightHandPinky2",
+      "parent": "mixamorig:RightHandPinky1"
+    },
+    {
+      "name": "mixamorig:RightHandPinky3",
+      "parent": "mixamorig:RightHandPinky2"
+    },
+    {
+      "name": "mixamorig:RightHandPinky4",
+      "parent": "mixamorig:RightHandPinky3"
+    },
+    {
+      "name": "mixamorig:LeftUpLeg",
+      "parent": "mixamorig:Hips"
+    },
+    {
+      "name": "mixamorig:LeftLeg",
+      "parent": "mixamorig:LeftUpLeg"
+    },
+    {
+      "name": "mixamorig:LeftFoot",
+      "parent": "mixamorig:LeftLeg"
+    },
+    {
+      "name": "mixamorig:LeftToeBase",
+      "parent": "mixamorig:LeftFoot"
+    },
+    {
+      "name": "mixamorig:LeftToe_End",
+      "parent": "mixamorig:LeftToeBase"
+    },
+    {
+      "name": "mixamorig:RightUpLeg",
+      "parent": "mixamorig:Hips"
+    },
+    {
+      "name": "mixamorig:RightLeg",
+      "parent": "mixamorig:RightUpLeg"
+    },
+    {
+      "name": "mixamorig:RightFoot",
+      "parent": "mixamorig:RightLeg"
+    },
+    {
+      "name": "mixamorig:RightToeBase",
+      "parent": "mixamorig:RightFoot"
+    },
+    {
+      "name": "mixamorig:RightToe_End",
+      "parent": "mixamorig:RightToeBase"
+    }
+  ],
+  "materials": [
+    "Atlas \u00b7 underwear bottom",
+    "Atlas \u00b7 underwear top",
+    "Atlas \u00b7 warm skin"
+  ],
+  "underwear_archive": "art/characters/atlas_female_base_v1/underwear_source/underwear.zip",
+  "underwear_archive_sha256": "4f57a60c6b505cb3e8bb98ad9d9ddf0b9f7e6d7d0aeb7ed745f4d13bb55d4765",
+  "underwear_meshes": [
+    {
+      "object": "ATLAS_UNDERWEAR_BRA_V1",
+      "vertices": 1624,
+      "polygons": 1396
+    },
+    {
+      "object": "ATLAS_UNDERWEAR_BRIEFS_V1",
+      "vertices": 757,
+      "polygons": 694
+    }
+  ],
+  "underwear_textures_max_dimension": 1024,
+  "customization": {
+    "skin_tone": "runtime material color",
+    "height_m": {
+      "minimum": 1.5,
+      "maximum": 1.9,
+      "method": "uniform character scale"
+    },
+    "weight_visual_range_kg": [
+      45,
+      120
+    ],
+    "body_build_shape_keys": [
+      "Build_Light",
+      "Build_Heavy"
+    ],
+    "proportion_shape_keys": {
+      "bust_percent": [
+        "Bust_Smaller",
+        "Bust_Larger"
+      ],
+      "stomach_percent": [
+        "Stomach_Flatter",
+        "Stomach_Fuller"
+      ],
+      "glutes_percent": [
+        "Glutes_Smaller",
+        "Glutes_Larger"
+      ],
+      "hip_percent": [
+        "Hips_Narrower",
+        "Hips_Wider"
+      ],
+      "thigh_percent": [
+        "Thighs_Slimmer",
+        "Thighs_Fuller"
+      ]
+    },
+    "body_mesh_has_baked_underwear": false,
+    "underwear_equipment_slots": [
+      "underwear_top",
+      "underwear_bottom"
+    ]
+  },
+  "vertices_trimmed_to_glb_four_influence_limit": 877,
+  "body_height_m": 1.684283,
+  "modifications": [
+    "Added warm skin material.",
+    "Kept underwear off the base body mesh and added the supplied bra and briefs as separate, conformed equipment meshes.",
+    "Added matching Build_Light and Build_Heavy shape keys to the base body and underwear equipment.",
+    "Connected the supplied base color, opacity, roughness, metallic, and normal maps; resized runtime textures to 1024 pixels maximum.",
+    "Added non-destructive Mixamo LeftEye and RightEye bones to match the Atlas skeleton contract."
+  ],
+  "animation_policy": "Use Atlas's existing Mixamo-compatible clips and runtime retargeter."
+}

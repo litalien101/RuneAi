@@ -14,7 +14,7 @@ This milestone supports two travelers connected to one loopback server. It prove
 
 ## Request identity
 
-`POST /api/session` assigns one of two seats and returns the token, player ID, and display name. The browser retains the token in `sessionStorage` for that tab. `GET /api/state` and `POST /api/action` require the token in `X-Atlas-Session`; player identity is resolved by the server, never accepted from an action body. Unknown tokens receive HTTP 401. A third concurrent session receives HTTP 409. Restarting the loopback server expires sessions and releases both seats without deleting saved player state.
+`POST /api/session` assigns one of two seats and returns the token, player ID, and display name. The browser retains the token in `sessionStorage` for that tab. `GET /api/state` and `POST /api/action` require the token in `X-Atlas-Session`; player identity is resolved by the server, never accepted from an action body. Unknown tokens receive HTTP 401. A third concurrent session receives HTTP 409. Closing or navigating away from a tab posts `POST /api/session/close` to release its seat; abandoned sessions expire after 30 seconds without a request. Release stops movement and persists zero velocity. Player progress is already committed to SQLite with each accepted action, so session cleanup does not discard it. Restarting the loopback server also expires sessions without deleting saved player state.
 
 ## Tick and persistence rules
 
@@ -27,4 +27,4 @@ This milestone supports two travelers connected to one loopback server. It prove
 
 ## Local play
 
-Open the game in two separate browser tabs. Each tab claims an available traveler seat, renders both travelers, controls its own traveler, and polls authoritative snapshots for the other. Close/restart the local server to release seats; saved progress remains in `data/world.sqlite3`.
+Open the game in two separate browser tabs. Each tab claims an available traveler seat, renders both travelers, controls its own traveler, and polls authoritative snapshots for the other. Closing a tab releases its seat; idle sessions are cleaned up automatically. Saved progress remains in `data/world.sqlite3`.

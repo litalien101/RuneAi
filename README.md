@@ -1,6 +1,6 @@
 # Project Atlas: The Reach
 
-The Reach is Atlas's first playable reference world: a small, persistent exploration game where player actions change a world that keeps its history.
+The Reach is Atlas's first playable reference world. All player and traveler avatars now use one character model: the female base currently being developed. The project opens as a clean character sandbox on a flat, undecorated ground plane.
 
 ## Run locally
 
@@ -16,26 +16,87 @@ npm run build
 python3 -m atlas_server
 ```
 
-Open <http://127.0.0.1:8765>. Each browser tab claims one of two local traveler sessions; open a second independent tab to play together. Both travelers appear in both views, while each tab controls its own character with **WASD**, **Shift** to run, **Space** to jump, and left-click travel. A third concurrent tab is refused; inactive sessions expire after 30 seconds, and restarting the server releases all seats. Use **right mouse drag** (or middle mouse drag) and the **arrow keys** to orbit the third-person view; the **scroll wheel** smoothly zooms in and out. Open **View** in the top-right corner to adjust mouse sensitivity, zoom speed, camera follow smoothing, and vertical-look inversion; these preferences are saved in this browser. Each traveler predicts movement on fixed ticks and submits independent ordered input-frame batches; the server keeps positions, vertical jump state, and tick acknowledgements separate while both travelers share gathered patches, Mara's introduction, the beacon, and the Mossling. Both client and server check terrain boundaries and shared circular colliders for tree trunks, Mara, the beacon, the Mossling, and the other traveler. Press **E** or click a nearby prompt to interact. When the Mossling is close, a contextual panel offers **Attack**, **Block**, and **Dodge**; a readied defense protects against its retaliation on your next strike, and Dodge sidesteps its attack line. After defeating it, approach its glowing resting seed and press **E** to reawaken it and replay the encounter without resetting your save. The satchel and Field notes belong to the active traveler. Ambient sound begins after your first input and can be muted there. Gather three reeds and activate the beacon. The local world is saved in `data/world.sqlite3`.
+Open <http://127.0.0.1:8765>. The page opens as a focused character workbench with one female traveler and a pinned appearance panel. The panel adjusts skin tone, height, weight, bust, stomach, hips, glutes, thighs, optional underwear, and shoulder guards. The proportion controls are initial hand-authored shape targets on the body and fitted underwear, not a full human scan system. Other sessions and NPCs remain in world data but are hidden from this preview. The server-side world history and authoring APIs remain available.
 
 To reset the save, stop the server and remove `data/world.sqlite3`.
 
+### Imported 3D assets
+
+The server serves model assets from `web/assets` by default. To serve a separate, curated model directory, set `ATLAS_ASSET_DIR` before starting the server:
+
+```bash
+ATLAS_ASSET_DIR=/path/to/models python3 -m atlas_server
+```
+
+Only supported model, animation, and image resources are served under same-origin `/assets/` URLs. Paths are confined to the configured directory; scripts, archives, and source-project files are not exposed. Keep glTF sidecars such as `.bin` and texture images beside their model at the relative paths recorded in the glTF file. Asset origins, licenses, modifications, and checksums are recorded in `web/assets/manifest.yaml`.
+
+The glTF model loader accepts paths relative to the configured asset directory and returns a cloned scene plus any embedded clips:
+
+```js
+import { ModelAssetLoader } from './model_loader.js';
+
+const modelLoader = new ModelAssetLoader();
+const { scene, animations } = await modelLoader.load('characters/female_base_atlas_v1.glb');
+world.add(scene);
+```
+
+All traveler instances use the female base at `female_base_atlas_v1.glb`. Its source body, optional underwear meshes, and customization targets share the 67-bone Mixamo rig. The bundled Mixamo idle, walk, run, jump, fall, and landing clips are loaded once and retargeted to the character's matching bone names. Root travel stays server-authoritative, walk/run timing follows movement speed, and transitions blend between states. The retargeter omits the hips rotation because the Blender glTF export applies an axis correction there; Atlas keeps root orientation and movement in control. Shape controls currently change the matching hand-authored morph targets on the body and garments. See `web/assets/manifest.yaml` for asset checksums and provenance.
+
+For new Blender clothing assets, see [`specs/atlas-clothing-authoring.md`](specs/atlas-clothing-authoring.md) and run `tools/characters/prepare_clothing_asset.py` to transfer Atlas bone weights and body morphs and export a skinned GLB.
+
+The character sandbox uses a level 40×14 walkable area with no static scenery colliders.
+
 ### Network development controls
 
-Use **1–5** while playing to switch the movement request simulator: **1** local, **2** good (50 ms), **3** average (120 ms), **4** bad (250 ms), and **5** packet-loss mode (10%). The debug strip reports RTT, jitter, simulated loss, retries, queued acknowledgements, and reconciliation correction. The simulator retries sequenced fixed-tick movement batches; duplicate retries are idempotent on the server. This is a local HTTP stress tool, not a packet-driven multiplayer transport. Press **6** to show the combat rewind overlay after an attack.
+Use **1–5** while playing to switch the movement request simulator: **1** local, **2** good (50 ms), **3** average (120 ms), **4** bad (250 ms), and **5** packet-loss mode (10%). The debug strip reports RTT, jitter, simulated loss, retries, queued acknowledgements, and reconciliation correction. The simulator retries sequenced fixed-tick movement batches; duplicate retries are idempotent on the server. This is a local HTTP stress tool, not a packet-driven multiplayer transport.
 
-Run `npm run ci` for deterministic JavaScript network/property-style checks, Python movement and rewind checks, and a client build. Both runtimes consume `tests/fixtures/movement-contract.json` to verify the same 60 Hz acceleration, diagonal-run, stop, and terrain-footprint behavior. The test setup uses Node's built-in runner instead of adding Jest or property-testing packages to this small JavaScript project. Attacks validate against a bounded history of server-recorded player positions, and the rewind overlay shows the historic attack origin and hitbox. The Mossling is stationary, so moving-target rewind remains outside this local two-player slice. Remote traveler snapshots are polled over local HTTP; this is not a persistent multiplayer transport.
+Run `npm run ci` for deterministic JavaScript network/property-style checks, Python movement and rewind checks, and a client build. Both runtimes consume `tests/fixtures/movement-contract.json` to verify the same 60 Hz acceleration, diagonal-run, stop, and terrain-footprint behavior. The test setup uses Node's built-in runner instead of adding Jest or property-testing packages to this small JavaScript project. Gameplay and NPC state remain server-side prototypes; the browser currently renders the female character alone for model work.
 
 ## What this proves
 
 - The server validates and applies actions; the browser only renders state and sends intent.
 - Startup validates the seeded Player, NPC, Region, Building, ResourceNode entities and their relationships against the bundled Atlas ontology and schema registry in `specs/atlas/specs`.
+- SQLite stores the ontology-validated entity graph; creator-authored entity and relationship writes are committed with immutable provenance events.
+- The local knowledge and memory queries return linked entities, event IDs, actors, source references, timestamps, and authored rationale.
 - Every accepted game event is validated as a registered Atlas `Event` entity and its action relationship is checked against the ontology.
 - World state persists in SQLite.
 - Each accepted action appends an immutable event in the same transaction as the state update.
 - The event history records schema version, actor, source, affected object IDs, and rationale; it can rebuild current state.
 - The beacon activation is a creator-authored deterministic world change, not an AI-generated claim.
 - The client is a working game loop, not an Atlas platform or production MMO service.
+
+### Local world authoring and explanation API
+
+The loopback server exposes the first creator-authored world-model slice. Add an entity with a canonical UUID, registered ontology type, timezone-aware `created_at`, a source reference, and an authored rationale:
+
+```json
+{
+  "entity": {
+    "id": "a UUID",
+    "type": "NPC",
+    "created_at": "2026-10-02T12:00:00Z",
+    "name": "Ilyra the Cartographer"
+  },
+  "source": { "kind": "creator_edit", "identifier": "a UUID" },
+  "rationale": "Added a cartographer to explain the eastern road network."
+}
+```
+
+Send that body to `POST /api/entities`. Then establish an ontology-declared edge with `POST /api/relationships`, using `type`, `source_id`, `target_id`, `source`, and `rationale`. Each request writes its immutable event and entity/relationship projection in one SQLite transaction. Repeated entity IDs, duplicate authored edges, unknown types, missing endpoints, or invalid relation directions are rejected without partial writes.
+
+`GET /api/knowledge?source=<uuid>&target=<uuid>&type=located_in` explains matching edges and includes both entity records, the source event, actor, source reference, timestamp, and rationale. `GET /api/memory?entity=<uuid>&after=<sequence>` returns matching immutable history in sequence order. Read queries require the local traveler session header used by `/api/state`; authoring is restricted to the loopback server and same-origin requests. The API is a development interface, not a public creator service.
+
+`GET /api/analytics?after=<sequence>&limit=1000` aggregates a bounded page of observed event history: activity by event/actor and date, social interactions, progression milestones, resource inflow/outflow, and combat outcomes. It reports formulas as direct counts and explicitly marks retention and causal explanation unavailable; analytics does not generate recommendations or claims.
+
+`POST /api/simulations` runs the deterministic `resource_progression` model against recorded lumen-reed and beacon events. Send `{"proposed_change":{"rule":"beacon.lumen_reed_cost","value":2}}` with the local traveler session header. The saved response includes baseline and candidate replays, evidence event IDs, scope-limited confidence, risk, and model limitations. Fetch a saved result with `GET /api/simulations/<simulation_uuid>`. A simulation is an immutable analysis artifact: it does not edit world rules, world projections, or event history. It replays observed activation attempts only; it cannot infer failed attempts or predict player choices. Stochastic predictions, if added later, must use separate models with independent seeded runs rather than counting repeated deterministic replays as evidence.
+
+`POST /api/policy/evaluations` accepts `{"simulation_id":"<simulation_uuid>"}` and evaluates that saved simulation against [`atlas-policy-engine.yaml`](specs/atlas/specs/atlas-policy-engine.yaml). The policy rejects cost changes over the creator-defined 10% limit, high-risk projections, insufficient recorded outcomes, confidence below 0.85, and rule changes without an explicit policy. Results are immutable and retrievable from `GET /api/policy/evaluations/<evaluation_uuid>`. An eligible result means the change may be presented for human review; it is not approval and does not alter the world. No autonomous world changes are enabled.
+
+`POST /api/decisions` accepts both the persisted `simulation_id` and its matching `evaluation_id`. The decision record combines the proposal, policy outcome, simulation confidence and scope, affected entities, and evidence references. It recommends approval only when the policy gate passes; that state is `awaiting_human_approval`. A blocked policy result produces a rejection recommendation with the violations. Records are immutable and readable from `GET /api/decisions/<decision_uuid>`.
+
+Record a human choice with `POST /api/decisions/<decision_uuid>/review`, sending `{"action":"approve","rationale":"Reviewed the evidence and accept this proposal."}`. Supported actions are `approve`, `reject`, `delay`, and `escalate`; each decision accepts one review with a required rationale. Approval changes the decision to `approved_pending_deployment`, while the response still confirms `world_change_applied: false`. Deployment remains a distinct capability and is not yet implemented.
+
+`GET /api/reasoning?event=<uuid>` returns the authored rationale, recorded result, involved entities, and any relationship written by that event. This provenance trace carries no inferred confidence and does not create a `TruthRecord`. Derived claims remain gated by two distinct evidence references, validation, and confidence of at least 0.80 under `atlas-truth-model.yaml`; creator/player-authored event rationales are never treated as inferred causes.
 
 ## Architecture
 
@@ -45,7 +106,7 @@ Browser client  ->  local HTTP API  ->  action rules  ->  SQLite transaction
       └──────────────── state query  <-───────────────────└── append-only event source
 ```
 
-The project uses permissively licensed libraries and original procedural game geometry. It does not package assets from the reference RSPS cache. It has no external service, account system, analytics, AI, or network exposure. It binds to loopback by default. Local tab sessions are ephemeral seat assignments, not real player accounts. This is a local foundation demo, not safe to expose to the public internet or use for real player accounts.
+The project uses permissively licensed libraries and original procedural game geometry. It does not package assets from the reference RSPS cache. It makes no external service or AI calls; its analytics are local aggregates over the project’s own immutable event history. It binds to loopback by default. Local tab sessions are ephemeral seat assignments, not real player accounts. This is a local foundation demo, not safe to expose to the public internet or use for real player accounts.
 
 The two-player local session, state ownership, and per-player tick rules are in [`specs/local-multiplayer.md`](specs/local-multiplayer.md).
 The game-to-ontology mapping and event relationships are documented in [`specs/reach-world-model.md`](specs/reach-world-model.md).

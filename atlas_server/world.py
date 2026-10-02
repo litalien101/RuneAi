@@ -3,21 +3,26 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from math import exp, floor, hypot, isfinite, sin
+from math import exp, hypot, isfinite
 from typing import Any
 from .history import HitboxSnapshot, validate_melee_hit
 
-WIDTH, HEIGHT = 20, 14
+WIDTH, HEIGHT = 40, 14
 START = (3, 10)
 JUMP_SPEED = 5.2
 JUMP_GRAVITY = 16.0
 JUMP_BUFFER_SECONDS = 0.12
 COYOTE_SECONDS = 0.10
+MOSSLING_MAX_HEALTH = 3
+MOSSLING_DAMAGE_PER_HIT = 1
+PLAYER_DAMAGE_PER_UNGUARDED_HIT = 7
+BEACON_LUMEN_REED_COST = 3
 MAX_STEP_UP = 0.28
 MAX_WALKABLE_GRADE = 0.65
 LEDGE_DROP = 0.55
 PLAYER_ENTITY_ID = "9163de5b-b156-5d5e-bb43-f371650c4998"
 SECOND_PLAYER_ENTITY_ID = "70968bb0-4c0a-52ad-94ea-3f4f6f1368b2"
+CREATOR_ENTITY_ID = "3ec83798-e816-5d19-87ba-25b3d93c504f"
 PLAYER_ENTITY_IDS = (PLAYER_ENTITY_ID, SECOND_PLAYER_ENTITY_ID)
 PLAYER_NAMES = {PLAYER_ENTITY_ID: "Wayfarer", SECOND_PLAYER_ENTITY_ID: "Pathfinder"}
 PLAYER_STARTS = {PLAYER_ENTITY_ID: START, SECOND_PLAYER_ENTITY_ID: (4.2, 10.0)}
@@ -45,6 +50,8 @@ def world_manifest() -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Return the static game world in Atlas entity and relationship form."""
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     entities: list[dict[str, Any]] = [
+        {"id": CREATOR_ENTITY_ID, "type": "Creator", "created_at": created_at,
+         "name": "Atlas World Author"},
         *[{"id": player_id, "type": "Player", "created_at": created_at,
           "name": PLAYER_NAMES[player_id], "x": PLAYER_STARTS[player_id][0], "y": PLAYER_STARTS[player_id][1]}
           for player_id in PLAYER_ENTITY_IDS],
@@ -75,78 +82,14 @@ def world_manifest() -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     ]
     return entities, relationships
 
-# Grid values: grass, water, stone path, tall grass, shore.
-TERRAIN = [
-    "~~~~~~~~~~~~~~~~~~~~",
-    "~....g.......g.....~",
-    "~...gg......gg.....~",
-    "~......g...........~",
-    "~.....g.......g....~",
-    "~...ggg........g...~",
-    "~....g......ggg....~",
-    "~..................~",
-    "~..gg......g.......~",
-    "~...g......g..gg...~",
-    "~..........g.......~",
-    "~......g...........~",
-    "~....ggg......g....~",
-    "~~~~~~~~~~~~~~~~~~~~",
-]
-
-
-def seeded(x: int, y: int) -> float:
-    value = sin(x * 127.1 + y * 311.7) * 43758.5453
-    return value - floor(value)
-
-
-def _is_path_cell(x: int, y: int) -> bool:
-    path = ((2, 10), (4, 9), (6, 9), (7, 8), (8, 7), (10, 7), (11, 6), (12, 6), (13, 5), (15, 4))
-    return any(abs(px - x) + abs(py - y) <= 1 for px, py in path)
-
-
-def _world_obstacles() -> list[dict[str, Any]]:
-    props = {(MARA["x"], MARA["y"]), (BEACON["x"], BEACON["y"]), (MOSSLING["x"], MOSSLING["y"]), START}
-    props.update((reed["x"], reed["y"]) for reed in REEDS)
-    obstacles = [
-        {"kind": "tree", "x": x, "z": z, "radius": 0.2, "seed": n, "scale": 0.75 + n * 0.52}
-        for z, row in enumerate(TERRAIN)
-        for x, cell in enumerate(row)
-        if cell == "g" and not _is_path_cell(x, z) and (x, z) not in props
-        for n in (seeded(x, z),) if n > 0.37
-    ]
-    obstacles.extend((
-        {"kind": "npc", "x": MARA["x"], "z": MARA["y"], "radius": 0.29},
-        {"kind": "beacon", "x": BEACON["x"], "z": BEACON["y"], "radius": 0.62},
-        {"kind": "creature", "x": MOSSLING["x"], "z": MOSSLING["y"], "radius": 0.46},
-    ))
-    return obstacles
-
-
-WORLD_OBSTACLES = _world_obstacles()
-
-# Two low, climbable slopes and a raised shelf with a ramp on its south side.
-# Heights are world units and use the same piecewise rules in web/network.js.
-SURFACE_FEATURES = (
-    {"kind": "slope", "x_min": 7.0, "x_max": 11.0, "z_min": 1.0, "z_max": 5.0, "height": 0.72},
-    {"kind": "ledge", "x_min": 14.0, "x_max": 17.0, "z_min": 7.0, "z_max": 10.0,
-     "ramp_x_min": 15.0, "ramp_x_max": 16.0, "ramp_z_max": 12.0, "height": 0.9},
-)
+TERRAIN = ["." * WIDTH for _ in range(HEIGHT)]
+WORLD_OBSTACLES: list[dict[str, Any]] = []
+SURFACE_FEATURES: tuple[dict[str, Any], ...] = ()
 
 
 def ground_height(x: float, z: float) -> float:
-    """Height of the walkable surface at a world position."""
-    height = 0.0
-    slope = SURFACE_FEATURES[0]
-    if slope["z_min"] <= z <= slope["z_max"]:
-        progress = min(1.0, max(0.0, (x - slope["x_min"]) / (slope["x_max"] - slope["x_min"])))
-        height = max(height, slope["height"] * progress)
-    ledge = SURFACE_FEATURES[1]
-    if ledge["x_min"] <= x <= ledge["x_max"] and ledge["z_min"] <= z <= ledge["z_max"]:
-        height = max(height, ledge["height"])
-    if ledge["ramp_x_min"] <= x <= ledge["ramp_x_max"] and ledge["z_max"] < z <= ledge["ramp_z_max"]:
-        progress = (ledge["ramp_z_max"] - z) / (ledge["ramp_z_max"] - ledge["z_max"])
-        height = max(height, ledge["height"] * progress)
-    return height
+    """The current character test area is a level plane at world height zero."""
+    return 0.0
 
 def initial_state() -> dict[str, Any]:
     return {
@@ -157,7 +100,7 @@ def initial_state() -> dict[str, Any]:
         "gathered": [],
         "mara_met": False,
         "beacon_awake": False,
-        "mossling_health": 3,
+        "mossling_health": MOSSLING_MAX_HEALTH,
         "player_health": 100,
         "player_defense": None,
         "mossling_defeated": False,
@@ -178,8 +121,11 @@ def walkable_position(x: float, z: float, radius: float = 0.2,
         if not walkable(cell_x, cell_z):
             return False
     for obstacle in WORLD_OBSTACLES if obstacles is None else obstacles:
-        combined_radius = radius + obstacle["radius"]
-        if hypot(x - obstacle["x"], z - obstacle["z"]) < combined_radius:
+        if obstacle.get("shape") == "box":
+            if (abs(x - obstacle["x"]) < radius + obstacle["half_width"] and
+                    abs(z - obstacle["z"]) < radius + obstacle["half_depth"]):
+                return False
+        elif hypot(x - obstacle["x"], z - obstacle["z"]) < radius + obstacle["radius"]:
             return False
     return True
 
@@ -207,7 +153,7 @@ def public_state(state: dict[str, Any], events: list[dict[str, Any]]) -> dict[st
         "obstacles": WORLD_OBSTACLES,
         "surface_features": SURFACE_FEATURES,
         "player": {"x": state["player"]["x"], "y": state["player"]["y"],
-                   "height": state["player"].get("height", 0.0),
+                   "height": 0.0 if state["player"].get("grounded", True) else state["player"].get("height", 0.0),
                    "vertical_velocity": state["player"].get("vy", 0.0),
                    "grounded": state["player"].get("grounded", True)},
         "velocity": {"x": state["player"].get("vx", 0.0), "z": state["player"].get("vz", 0.0)},
@@ -215,9 +161,13 @@ def public_state(state: dict[str, Any], events: list[dict[str, Any]]) -> dict[st
         "gathered": state["gathered"],
         "mara_met": state["mara_met"],
         "beacon_awake": state["beacon_awake"],
+        "rules": {"beacon_lumen_reed_cost": BEACON_LUMEN_REED_COST,
+                  "mossling_max_health": MOSSLING_MAX_HEALTH,
+                  "mossling_damage_per_hit": MOSSLING_DAMAGE_PER_HIT,
+                  "player_damage_per_unguarded_hit": PLAYER_DAMAGE_PER_UNGUARDED_HIT},
         "player_health": state.get("player_health", 100),
         "player_defense": state.get("player_defense"),
-        "mossling": {**MOSSLING, "health": state.get("mossling_health", 3), "max_health": 3,
+        "mossling": {**MOSSLING, "health": state.get("mossling_health", MOSSLING_MAX_HEALTH), "max_health": MOSSLING_MAX_HEALTH,
                      "defeated": state.get("mossling_defeated", False)},
         "journal": state["journal"][-5:],
         "mara": MARA,
@@ -341,9 +291,9 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             raise ValueError("Move closer to the Mossling before attacking.")
         if state.get("mossling_defeated", False):
             raise ValueError("The Mossling has already fled into the undergrowth.")
-        state["mossling_health"] = max(0, state.get("mossling_health", 3) - 1)
+        state["mossling_health"] = max(0, state.get("mossling_health", MOSSLING_MAX_HEALTH) - MOSSLING_DAMAGE_PER_HIT)
         defense = state.get("player_defense")
-        player_damage = 0 if defense in {"guard", "dodge"} else 7
+        player_damage = 0 if defense in {"guard", "dodge"} else PLAYER_DAMAGE_PER_UNGUARDED_HIT
         state["player_health"] = max(0, state.get("player_health", 100) - player_damage)
         state["player_defense"] = None
         defeated = state["mossling_health"] == 0
@@ -400,7 +350,7 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             raise ValueError("The Mossling is already active.")
         if distance(player, MOSSLING) > 4.0:
             raise ValueError("Move closer to the Mossling's resting place.")
-        state["mossling_health"] = 3
+        state["mossling_health"] = MOSSLING_MAX_HEALTH
         state["mossling_defeated"] = False
         state["player_defense"] = None
         state["journal"].append("The mossling stirred and returned to the valley.")
@@ -418,7 +368,7 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
                 raise ValueError("This patch has already been gathered.")
             state["gathered"].append(reed["id"])
             state["inventory"]["lumen_reed"] += 1
-            state["journal"].append("Gathered a lumen reed. The beacon may need three.")
+            state["journal"].append(f"Gathered a lumen reed. The beacon needs {BEACON_LUMEN_REED_COST}.")
             return state, "ResourceGathered", {"resource": "lumen_reed", "patch_id": reed["id"], "quantity": 1}
 
     if target_id == MARA["id"]:
@@ -427,10 +377,10 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
         first_meeting = not state["mara_met"]
         state["mara_met"] = True
         message = (
-            "Mara: The beacon listens for three lumen reeds. Gather them from the quiet patches, "
+            f"Mara: The beacon listens for {BEACON_LUMEN_REED_COST} lumen reeds. Gather them from the quiet patches, "
             "then wake it. The valley has been waiting for a voice."
             if first_meeting else
-            "Mara: Three reeds, then the beacon. I'll keep watch here."
+            f"Mara: {BEACON_LUMEN_REED_COST} reeds, then the beacon. I'll keep watch here."
         )
         state["journal"].append("Mara told you how to wake the listening beacon.")
         return state, "NPCSpokenTo", {"npc_id": "mara", "first_meeting": first_meeting, "dialogue": message}
@@ -440,12 +390,12 @@ def apply_action(state: dict[str, Any], action: dict[str, Any]) -> tuple[dict[st
             raise ValueError("The old beacon is farther along the eastern trail.")
         if state["beacon_awake"]:
             raise ValueError("The beacon is already awake. Its song carries across the valley.")
-        if state["inventory"]["lumen_reed"] < 3:
-            raise ValueError("The beacon is quiet. It needs three lumen reeds.")
-        state["inventory"]["lumen_reed"] -= 3
+        if state["inventory"]["lumen_reed"] < BEACON_LUMEN_REED_COST:
+            raise ValueError(f"The beacon is quiet. It needs {BEACON_LUMEN_REED_COST} lumen reeds.")
+        state["inventory"]["lumen_reed"] -= BEACON_LUMEN_REED_COST
         state["beacon_awake"] = True
         state["journal"].append("The listening beacon is awake. A new signal answers from beyond the valley.")
-        return state, "BeaconAwakened", {"beacon_id": "beacon", "offering": {"lumen_reed": 3}, "result": "signal_received"}
+        return state, "BeaconAwakened", {"beacon_id": "beacon", "offering": {"lumen_reed": BEACON_LUMEN_REED_COST}, "result": "signal_received"}
 
     raise ValueError("There is nothing to interact with there.")
 
@@ -464,7 +414,7 @@ def replay_event(state: dict[str, Any], event_type: str, payload: dict[str, Any]
         if patch_id not in state["gathered"]:
             state["gathered"].append(patch_id)
             state["inventory"][payload["resource"]] += payload["quantity"]
-        state["journal"].append("Gathered a lumen reed. The beacon may need three.")
+        state["journal"].append(f"Gathered a lumen reed. The beacon needs {BEACON_LUMEN_REED_COST}.")
     elif event_type == "NPCSpokenTo":
         state["mara_met"] = True
         state["journal"].append("Mara told you how to wake the listening beacon.")
@@ -488,6 +438,10 @@ def replay_event(state: dict[str, Any], event_type: str, payload: dict[str, Any]
         state["mossling_defeated"] = False
         state["player_defense"] = None
         state["journal"].append("The mossling stirred and returned to the valley.")
+    elif event_type in {"EntityCreated", "RelationshipEstablished"}:
+        # These events project into atlas_entities/knowledge_relationships rather
+        # than the playable world's compact state document.
+        pass
     else:
         raise ValueError(f"Unsupported event in world history: {event_type}")
     return state
