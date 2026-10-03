@@ -10,6 +10,7 @@
 .appearance-item b{font:12px Georgia,serif;font-weight:400}
 .appearance-item small{color:#929b8e;font:8px Georgia,serif}
 .appearance-item input{margin-left:auto;accent-color:#d3bd72}
+.appearance-save-status{padding:6px 8px;color:#aeb89f;font:9px Georgia,serif}
 
 /* Focused model workbench while the character asset is being built. */
 .character-preview-screen .atlas-topbar,

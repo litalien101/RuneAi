@@ -1,0 +1,47 @@
+{
+  "schema": "atlas-equipment/v1",
+  "asset_id": "atlas.clothing.wayfarer_vest_v1",
+  "equipment_slot": "chest",
+  "body_regions": [
+    "left_arm",
+    "right_arm",
+    "torso"
+  ],
+  "body_region_schema": "atlas-body-regions/v1",
+  "body_region_source_sha256": "2a114cc76dd0d2f4d7c83ec30d99fb875d4917203562a5d483084ef30c0dd3bb",
+  "skeleton_id": "ATLAS_HUMANOID_V1",
+  "body_object": "ATLAS_FEMALE_BODY_V1",
+  "rig_object": "ATLAS_HUMANOID_V1_RIG",
+  "source_blend": "/srv/projects/Project_Atlas/art/characters/workspaces/wayfarer_vest_region_seed.blend",
+  "runtime_glb": "atlas.clothing.wayfarer_vest_v1.glb",
+  "runtime_sha256": "7d5dcefaec9e8803f14a0846af7baf292760b324e8dce8f311ce93a1b025af7f",
+  "mesh_object": "wayfarer_vest",
+  "vertex_count": 2846,
+  "body_morph_targets": [
+    "Build_Light",
+    "Build_Heavy",
+    "Bust_Smaller",
+    "Bust_Larger",
+    "Stomach_Flatter",
+    "Stomach_Fuller",
+    "Glutes_Smaller",
+    "Glutes_Larger",
+    "Hips_Narrower",
+    "Hips_Wider",
+    "Thighs_Slimmer",
+    "Thighs_Fuller"
+  ],
+  "excluded_bone_groups": [],
+  "maximum_skin_influences": 4,
+  "fit_review_required": true,
+  "fit_review_status": "review_required",
+  "body_surface_offset_m": {
+    "mean": 0.015937876707310734,
+    "maximum": 0.020119424909353256
+  },
+  "body_surface_signed_offset_m": {
+    "minimum": 0.00827883294550702,
+    "maximum": 0.020119339460507035
+  },
+  "redistribution_status": "review_required"
+}

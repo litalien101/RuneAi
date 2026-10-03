@@ -4,7 +4,7 @@ import { clone as cloneSkinnedScene } from 'three/addons/utils/SkeletonUtils.js'
 const MODEL_EXTENSIONS = new Set(['.gltf', '.glb']);
 // Bump this whenever a bundled character asset changes, so cached large GLBs
 // from older releases cannot mask the optimized versions.
-const MODEL_ASSET_REVISION = '8';
+const MODEL_ASSET_REVISION = '10';
 
 export function modelAssetUrl(assetPath) {
   if (typeof assetPath !== 'string' || assetPath.length === 0 || assetPath.includes('\\') || assetPath.includes('\0')) {

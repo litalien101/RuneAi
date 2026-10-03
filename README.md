@@ -2,6 +2,12 @@
 
 The Reach is Atlas's first playable reference world. All player and traveler avatars now use one character model: the female base currently being developed. The project opens as a clean character sandbox on a flat, undecorated ground plane.
 
+## Start here
+
+For orientation, read this file first, then [`specs/atlas-character-generation.md`](specs/atlas-character-generation.md) for the character workflow and [`specs/asset-provenance.md`](specs/asset-provenance.md) for rights and release rules. [`AGENTS.md`](AGENTS.md) is the short contributor and AI guide. The local game entry point is `atlas_server`; browser sources are in `web/`; character tools are in `tools/characters/`; runtime assets and checksums are under `web/assets/` and `web/assets/manifest.yaml`.
+
+The character pipeline uses a compact design-profile JSON, deterministic Blender generation, human base review, landmark placement, then separate rigging/weighting and appearance stages. It does not call an AI service or create a finished rigged character. Work in `art/characters/pending_models/` and `pending_equipment/` is authoring/review data, not a runtime asset. Runtime activation requires explicit review and registration.
+
 ## Run locally
 
 Requires Python 3.11 or newer and Node.js 20+. The Python server uses PyYAML to validate Atlas's YAML contracts; the browser client uses Three.js for rendering. Both projects use the permissive MIT license. Third-party notices are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
@@ -16,7 +22,7 @@ npm run build
 python3 -m atlas_server
 ```
 
-Open <http://127.0.0.1:8765>. The page opens as a focused character workbench with one female traveler and a pinned appearance panel. The panel adjusts skin tone, height, weight, bust, stomach, hips, glutes, thighs, optional underwear, and shoulder guards. The proportion controls are initial hand-authored shape targets on the body and fitted underwear, not a full human scan system. Other sessions and NPCs remain in world data but are hidden from this preview. The server-side world history and authoring APIs remain available.
+Open <http://127.0.0.1:8765>. The page opens as a focused character workbench with one female traveler and a pinned appearance panel. The panel adjusts skin tone, height, weight, bust, stomach, hips, glutes, thighs, optional underwear, and shoulder guards. The validated `atlas-character-profile/v1` profile is stored with the local traveler in SQLite and restored on reconnect. Proportion controls are hand-authored shape targets, not a scan-based fitting system. Other sessions and NPCs remain in world data but are hidden from this preview. The server-side world history and authoring APIs remain available.
 
 To reset the save, stop the server and remove `data/world.sqlite3`.
 
@@ -43,6 +49,14 @@ world.add(scene);
 All traveler instances use the female base at `female_base_atlas_v1.glb`. Its source body, optional underwear meshes, and customization targets share the 67-bone Mixamo rig. The bundled Mixamo idle, walk, run, jump, fall, and landing clips are loaded once and retargeted to the character's matching bone names. Root travel stays server-authoritative, walk/run timing follows movement speed, and transitions blend between states. The retargeter omits the hips rotation because the Blender glTF export applies an axis correction there; Atlas keeps root orientation and movement in control. Shape controls currently change the matching hand-authored morph targets on the body and garments. See `web/assets/manifest.yaml` for asset checksums and provenance.
 
 For new Blender clothing assets, see [`specs/atlas-clothing-authoring.md`](specs/atlas-clothing-authoring.md) and run `tools/characters/prepare_clothing_asset.py` to transfer Atlas bone weights and body morphs and export a skinned GLB.
+
+### Text-to-character generation
+
+The creator workflow converts a natural-language brief into a compact, validated [`atlas-character-design-profile/v1`](specs/atlas-character-design-profile-v1.schema.json) contract, then builds a one-object base mesh with deterministic Blender geometry or from a licensed reference mesh. Realistic form is the profile default; stylized and low-poly looks require an explicit style choice. The profile controls body proportions, muscle definition, and key head and extremity proportions. A Blender object can contain disconnected mesh islands: the current troll seed still has 20 surface components, although the torso and upper arms are stitched together at both armpits. Inspect and repair the generated surface before accepting it; one object does not imply a watertight, fully connected anatomical surface. AI-generated profiles are separate from the runtime `atlas-character-profile/v1` save format. This is still a base-model stage; reviewed sculpting, rigging, weights, animation, and surface texturing remain later production steps. See [`specs/atlas-character-generation.md`](specs/atlas-character-generation.md) for profile authoring, review gates, and marker handoff.
+
+Run `npm run assets:check` to validate the registered runtime asset paths and SHA-256 checksums, GLB skin structure, and consistency between the female base and humanoid rig contracts. New clothing exports include a runtime checksum and remain marked for fit review and rights review until those gates are completed. `npm run assets:release-check` additionally fails unless every registered asset has `redistribution_status: cleared`; do not clear that field without documenting the applicable redistribution terms. The automated check does not replace the required visual preview through idle, walk, run, jump, fall, and land.
+
+The female character's rig-weighted region map lives in `art/characters/atlas_female_base_v1/atlas_body_regions_v1.json`. Rebuild it after a base-model change with `blender --background --python tools/characters/build_body_region_schema.py`. Clothing preparation requires explicit `--region` values and writes to `art/characters/pending_equipment/`; pending exports are not runtime-visible. After inspecting every morph extreme and all six locomotion states, register clothing with `npm run assets:register-clothing -- --help`. Registration requires a completed fit checklist, a named reviewer, and explicit rights evidence. The server serves clothing only when the registry marks it approved and its checksum matches.
 
 The character sandbox uses a level 40×14 walkable area with no static scenery colliders.
 
@@ -87,6 +101,8 @@ Send that body to `POST /api/entities`. Then establish an ontology-declared edge
 `GET /api/knowledge?source=<uuid>&target=<uuid>&type=located_in` explains matching edges and includes both entity records, the source event, actor, source reference, timestamp, and rationale. `GET /api/memory?entity=<uuid>&after=<sequence>` returns matching immutable history in sequence order. Read queries require the local traveler session header used by `/api/state`; authoring is restricted to the loopback server and same-origin requests. The API is a development interface, not a public creator service.
 
 `GET /api/analytics?after=<sequence>&limit=1000` aggregates a bounded page of observed event history: activity by event/actor and date, social interactions, progression milestones, resource inflow/outflow, and combat outcomes. It reports formulas as direct counts and explicitly marks retention and causal explanation unavailable; analytics does not generate recommendations or claims.
+
+`POST /api/appearance` saves a complete `atlas-character-profile/v1` document for the authenticated local traveler. `GET /api/state` returns that traveler’s saved `appearance`; the profile is validated against [`atlas-character-profile-v1.schema.json`](specs/atlas-character-profile-v1.schema.json) before its SQLite projection is updated. Appearance is a cosmetic profile update and does not append a world gameplay event.
 
 `POST /api/simulations` runs the deterministic `resource_progression` model against recorded lumen-reed and beacon events. Send `{"proposed_change":{"rule":"beacon.lumen_reed_cost","value":2}}` with the local traveler session header. The saved response includes baseline and candidate replays, evidence event IDs, scope-limited confidence, risk, and model limitations. Fetch a saved result with `GET /api/simulations/<simulation_uuid>`. A simulation is an immutable analysis artifact: it does not edit world rules, world projections, or event history. It replays observed activation attempts only; it cannot infer failed attempts or predict player choices. Stochastic predictions, if added later, must use separate models with independent seeded runs rather than counting repeated deterministic replays as evidence.
 

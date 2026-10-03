@@ -3,7 +3,7 @@
   "skeleton_id": "ATLAS_HUMANOID_V1",
   "blender_version": "5.2.2 LTS",
   "source_model": "web/assets/characters/female_base_atlas_v1.glb",
-  "source_sha256": "a0364c160f6e86c2f373ec8d72acc14c2e323def05c3c8757e199c512b4f7168",
+  "source_sha256": "2a114cc76dd0d2f4d7c83ec30d99fb875d4917203562a5d483084ef30c0dd3bb",
   "rig_object": "ATLAS_HUMANOID_V1_RIG",
   "bone_count": 67,
   "bones": [

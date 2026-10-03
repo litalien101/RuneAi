@@ -1,0 +1,394 @@
+{
+  "schema": "atlas-character-reference-calibration/v1",
+  "calibrated_at": "2026-10-03T02:33:19.744654+00:00",
+  "source_file": "troll.glb",
+  "source_path_from_project_root": "../troll.glb",
+  "source_sha256": "55202c278dbf55637a084e1dc2608266619272f2e257da240adfe9d33b54eb4e",
+  "provenance": {
+    "generator": "Sketchfab-12.66.0",
+    "title": "Troll",
+    "author": "DJMaesen (https://sketchfab.com/bumstrum)",
+    "license": "CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)",
+    "source": "https://sketchfab.com/3d-models/troll-8621813ed6c24f569f109ca1ac7ba609",
+    "glb_mesh_count": 1,
+    "glb_skin_count": 1,
+    "glb_animation_names": [
+      "CINEMA_4D_Main"
+    ]
+  },
+  "measurement_method": "Blender GLB import; evaluated mesh world-space bounds; robust 2-percentile cross-sections; source rest-pose bone heads.",
+  "limitations": [
+    "Measurements describe this reference only; its rest pose and rig are not Atlas-compatible by implication.",
+    "Cross-sections summarize the whole surface at each height and may include arms, ears, or other protrusions.",
+    "Use the record to tune and compare the procedural recipe; do not copy geometry, textures, rig, or animation without separate review."
+  ],
+  "geometry": {
+    "selected_mesh_object": "Object_7",
+    "selected_mesh_vertex_count": 1967,
+    "low": [
+      -132.355301,
+      -100.626587,
+      -1.958455
+    ],
+    "high": [
+      128.876205,
+      47.294758,
+      379.016785
+    ],
+    "height": 380.97524,
+    "width_over_height": 0.685692,
+    "depth_over_height": 0.38827,
+    "other_substantial_mesh_objects": [],
+    "cross_sections": [
+      {
+        "height_percent": 5,
+        "sample_vertices": 46,
+        "x_extent_over_height": 0.417342,
+        "y_extent_over_height": 0.166599,
+        "center_x_over_height": -0.117078,
+        "center_y_over_height": 0.07996
+      },
+      {
+        "height_percent": 10,
+        "sample_vertices": 19,
+        "x_extent_over_height": 0.400875,
+        "y_extent_over_height": 0.104828,
+        "center_x_over_height": -0.116389,
+        "center_y_over_height": 0.072622
+      },
+      {
+        "height_percent": 20,
+        "sample_vertices": 43,
+        "x_extent_over_height": 0.575197,
+        "y_extent_over_height": 0.180281,
+        "center_x_over_height": 0.09011,
+        "center_y_over_height": -0.013256
+      },
+      {
+        "height_percent": 25,
+        "sample_vertices": 89,
+        "x_extent_over_height": 0.645555,
+        "y_extent_over_height": 0.162339,
+        "center_x_over_height": 0.107329,
+        "center_y_over_height": -0.024498
+      },
+      {
+        "height_percent": 30,
+        "sample_vertices": 36,
+        "x_extent_over_height": 0.654783,
+        "y_extent_over_height": 0.1792,
+        "center_x_over_height": -0.031184,
+        "center_y_over_height": -0.050171
+      },
+      {
+        "height_percent": 35,
+        "sample_vertices": 63,
+        "x_extent_over_height": 0.674175,
+        "y_extent_over_height": 0.22766,
+        "center_x_over_height": 0.025595,
+        "center_y_over_height": -0.001173
+      },
+      {
+        "height_percent": 40,
+        "sample_vertices": 22,
+        "x_extent_over_height": 0.672945,
+        "y_extent_over_height": 0.280144,
+        "center_x_over_height": -0.050959,
+        "center_y_over_height": -0.056546
+      },
+      {
+        "height_percent": 45,
+        "sample_vertices": 14,
+        "x_extent_over_height": 0.662255,
+        "y_extent_over_height": 0.273414,
+        "center_x_over_height": -0.047467,
+        "center_y_over_height": -0.0388
+      },
+      {
+        "height_percent": 50,
+        "sample_vertices": 15,
+        "x_extent_over_height": 0.525677,
+        "y_extent_over_height": 0.147146,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": 0.096576
+      },
+      {
+        "height_percent": 55,
+        "sample_vertices": 20,
+        "x_extent_over_height": 0.638833,
+        "y_extent_over_height": 0.331919,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": 0.046417
+      },
+      {
+        "height_percent": 60,
+        "sample_vertices": 21,
+        "x_extent_over_height": 0.612298,
+        "y_extent_over_height": 0.296085,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": 0.023287
+      },
+      {
+        "height_percent": 65,
+        "sample_vertices": 42,
+        "x_extent_over_height": 0.468286,
+        "y_extent_over_height": 0.290446,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": 0.010928
+      },
+      {
+        "height_percent": 70,
+        "sample_vertices": 22,
+        "x_extent_over_height": 0.506905,
+        "y_extent_over_height": 0.339524,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": 0.078784
+      },
+      {
+        "height_percent": 75,
+        "sample_vertices": 23,
+        "x_extent_over_height": 0.4461,
+        "y_extent_over_height": 0.317866,
+        "center_x_over_height": 0.004224,
+        "center_y_over_height": 0.008813
+      },
+      {
+        "height_percent": 80,
+        "sample_vertices": 36,
+        "x_extent_over_height": 0.417293,
+        "y_extent_over_height": 0.31988,
+        "center_x_over_height": 0.004063,
+        "center_y_over_height": -0.089632
+      },
+      {
+        "height_percent": 85,
+        "sample_vertices": 184,
+        "x_extent_over_height": 0.192744,
+        "y_extent_over_height": 0.303426,
+        "center_x_over_height": 0.016173,
+        "center_y_over_height": -0.156962
+      },
+      {
+        "height_percent": 90,
+        "sample_vertices": 249,
+        "x_extent_over_height": 0.170886,
+        "y_extent_over_height": 0.238322,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": -0.153901
+      },
+      {
+        "height_percent": 95,
+        "sample_vertices": 21,
+        "x_extent_over_height": 0.179071,
+        "y_extent_over_height": 0.18774,
+        "center_x_over_height": 0.004566,
+        "center_y_over_height": -0.127756
+      }
+    ]
+  },
+  "rig": {
+    "armature_count": 1,
+    "selected_armature": "Object_4",
+    "bone_count": 47,
+    "landmarks": {
+      "pelvis": {
+        "source_bone": "hips_01",
+        "position": [
+          0.0,
+          -19.304234,
+          154.008896
+        ],
+        "height_percent": 40.939,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": 0.019323
+      },
+      "spine": {
+        "source_bone": "spine_011",
+        "position": [
+          0.0,
+          -20.149616,
+          189.632828
+        ],
+        "height_percent": 50.29,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": 0.017104
+      },
+      "chest": {
+        "source_bone": "chest_012",
+        "position": [
+          0.0,
+          -15.427356,
+          246.935791
+        ],
+        "height_percent": 65.331,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": 0.029499
+      },
+      "neck": {
+        "source_bone": "neck_039",
+        "position": [
+          -0.0,
+          -33.025551,
+          305.32605
+        ],
+        "height_percent": 80.657,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": -0.016693
+      },
+      "head": {
+        "source_bone": "head_040",
+        "position": [
+          -1e-06,
+          -56.057114,
+          327.707062
+        ],
+        "height_percent": 86.532,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": -0.077147
+      },
+      "left_shoulder": {
+        "source_bone": "L_shoulder_013",
+        "position": [
+          29.31329,
+          -13.70965,
+          297.352356
+        ],
+        "height_percent": 78.564,
+        "centered_x_over_height": 0.081509,
+        "centered_y_over_height": 0.034008
+      },
+      "right_shoulder": {
+        "source_bone": "R_shoulder_026",
+        "position": [
+          -29.31329,
+          -13.709646,
+          297.352356
+        ],
+        "height_percent": 78.564,
+        "centered_x_over_height": -0.072377,
+        "centered_y_over_height": 0.034008
+      },
+      "left_elbow": {
+        "source_bone": "L_elbow_015",
+        "position": [
+          120.022438,
+          -7.669135,
+          242.780502
+        ],
+        "height_percent": 64.24,
+        "centered_x_over_height": 0.319606,
+        "centered_y_over_height": 0.049864
+      },
+      "right_elbow": {
+        "source_bone": "R_elbow_028",
+        "position": [
+          -120.022484,
+          -7.669127,
+          242.780518
+        ],
+        "height_percent": 64.24,
+        "centered_x_over_height": -0.310474,
+        "centered_y_over_height": 0.049864
+      },
+      "left_wrist": {
+        "source_bone": "L_wrist_016",
+        "position": [
+          177.470932,
+          -50.86581,
+          184.195999
+        ],
+        "height_percent": 48.863,
+        "centered_x_over_height": 0.470399,
+        "centered_y_over_height": -0.063521
+      },
+      "right_wrist": {
+        "source_bone": "R_wrist_029",
+        "position": [
+          -177.471008,
+          -50.865807,
+          184.195984
+        ],
+        "height_percent": 48.863,
+        "centered_x_over_height": -0.461267,
+        "centered_y_over_height": -0.063521
+      },
+      "left_knee": {
+        "source_bone": "L_knee_03",
+        "position": [
+          54.675304,
+          -26.996078,
+          81.101494
+        ],
+        "height_percent": 21.802,
+        "centered_x_over_height": 0.14808,
+        "centered_y_over_height": -0.000867
+      },
+      "right_knee": {
+        "source_bone": "R_knee_07",
+        "position": [
+          -54.675297,
+          -26.996073,
+          81.101501
+        ],
+        "height_percent": 21.802,
+        "centered_x_over_height": -0.138948,
+        "centered_y_over_height": -0.000867
+      },
+      "left_ankle": {
+        "source_bone": "L_ankle_04",
+        "position": [
+          63.222179,
+          0.311764,
+          22.892023
+        ],
+        "height_percent": 6.523,
+        "centered_x_over_height": 0.170514,
+        "centered_y_over_height": 0.070812
+      },
+      "right_ankle": {
+        "source_bone": "R_ankle_08",
+        "position": [
+          -63.222172,
+          0.311775,
+          22.892035
+        ],
+        "height_percent": 6.523,
+        "centered_x_over_height": -0.161382,
+        "centered_y_over_height": 0.070812
+      },
+      "left_eye": {
+        "source_bone": "L_eye_041",
+        "position": [
+          22.583626,
+          -79.482552,
+          347.192291
+        ],
+        "height_percent": 91.647,
+        "centered_x_over_height": 0.063844,
+        "centered_y_over_height": -0.138635
+      },
+      "right_eye": {
+        "source_bone": "R_eye_042",
+        "position": [
+          -22.583626,
+          -79.482552,
+          347.192291
+        ],
+        "height_percent": 91.647,
+        "centered_x_over_height": -0.054712,
+        "centered_y_over_height": -0.138635
+      },
+      "jaw": {
+        "source_bone": "jaw_043",
+        "position": [
+          -0.0,
+          -67.919838,
+          326.644806
+        ],
+        "height_percent": 86.253,
+        "centered_x_over_height": 0.004566,
+        "centered_y_over_height": -0.108285
+      }
+    }
+  }
+}

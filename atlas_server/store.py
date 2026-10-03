@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import AtlasContracts
+from .character_profile import DEFAULT_APPEARANCE, validate_appearance
 from .analytics import summarize_events
 from .simulation import run_simulation as simulate_recorded_events
 from .policy import PolicyEngine
@@ -24,7 +25,7 @@ from .world import (
     WORLD_ENTITY_IDS, apply_action, initial_state, normalize_movement, replay_event,
 )
 
-PERSONAL_FIELDS = ("player", "inventory", "player_health", "player_defense", "journal")
+PERSONAL_FIELDS = ("player", "inventory", "player_health", "player_defense", "journal", "appearance")
 SESSION_IDLE_TTL_SECONDS = 30.0
 
 
@@ -219,8 +220,24 @@ class WorldStore:
             legacy_state = json.loads(row["state_json"])
             _, default_personal = _split_state(initial_state())
             for player_id in PLAYER_ENTITY_IDS:
-                exists = db.execute("SELECT 1 FROM player_states WHERE player_id = ?", (player_id,)).fetchone()
+                exists = db.execute("SELECT state_json FROM player_states WHERE player_id = ?", (player_id,)).fetchone()
                 if exists:
+                    existing_personal = json.loads(exists["state_json"])
+                    old_appearance = existing_personal.get("appearance")
+                    if not isinstance(old_appearance, dict):
+                        migrated_appearance = DEFAULT_APPEARANCE.copy()
+                    else:
+                        candidate = {**DEFAULT_APPEARANCE,
+                                     **{key: value for key, value in old_appearance.items()
+                                        if key in DEFAULT_APPEARANCE}}
+                        try:
+                            migrated_appearance = validate_appearance(candidate)
+                        except ValueError:
+                            migrated_appearance = DEFAULT_APPEARANCE.copy()
+                    if old_appearance != migrated_appearance:
+                        existing_personal["appearance"] = migrated_appearance
+                        db.execute("UPDATE player_states SET state_json = ? WHERE player_id = ?",
+                                   (json.dumps(existing_personal, separators=(",", ":")), player_id))
                     continue
                 if player_id == PLAYER_ENTITY_ID:
                     personal = {key: legacy_state.get(key, value) for key, value in default_personal.items()}
@@ -409,6 +426,27 @@ class WorldStore:
                    "rationale": e["rationale"], "subject_id": e["subject_id"], "object_id": e["object_id"],
                    "detail": json.loads(e["payload_json"])} for e in reversed(events)]
         return state, recent
+
+    def save_appearance(self, player_id: str, appearance: Any) -> dict[str, Any]:
+        if player_id not in PLAYER_ENTITY_IDS:
+            raise ValueError("Player profile is unavailable.")
+        profile = validate_appearance(appearance)
+        with self._command_lock, closing(self.connect()) as db:
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                row = db.execute("SELECT state_json FROM player_states WHERE player_id = ?", (player_id,)).fetchone()
+                if row is None:
+                    raise ValueError("Player profile is unavailable.")
+                state = json.loads(row["state_json"])
+                state["appearance"] = profile
+                db.execute("UPDATE player_states SET state_json = ? WHERE player_id = ?",
+                           (json.dumps(state, separators=(",", ":")), player_id))
+                db.execute("COMMIT")
+            except Exception:
+                if db.in_transaction:
+                    db.execute("ROLLBACK")
+                raise
+        return profile
 
     @staticmethod
     def _canonical_uuid(value: str | None, label: str) -> str | None:

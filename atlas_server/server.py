@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
+
+import yaml
 
 from .contracts import AtlasContracts
 from .reasoning import explain_event_provenance
@@ -57,6 +60,7 @@ class Handler(BaseHTTPRequestHandler):
             state, events = self.store.read(player_id)
             response = public_state(state, events)
             response["last_processed_input"] = self.store.last_input_sequence_for(player_id)
+            response["appearance"] = state.get("appearance")
             response["active_player"] = {"id": player_id, "name": next(p["name"] for p in state["players"] if p["is_self"])}
             return self._json(200, response)
         if path.startswith("/api/simulations/"):
@@ -176,6 +180,25 @@ class Handler(BaseHTTPRequestHandler):
             asset_path.relative_to(root)
             if not asset_path.is_file():
                 raise FileNotFoundError
+            if parts[0] == "clothing":
+                manifest = yaml.safe_load((root / "manifest.yaml").read_text(encoding="utf-8"))
+                if not isinstance(manifest, list):
+                    raise FileNotFoundError
+                entry = next((item for item in manifest if isinstance(item, dict)
+                              and item.get("asset_kind") == "clothing"
+                              and relative_path in item.get("files", [])), None)
+                checksums = entry.get("checksum_sha256") if entry else None
+                if (entry is None or entry.get("fit_review_status") != "approved"
+                        or entry.get("redistribution_status") != "cleared"
+                        or not entry.get("fit_reviewer")
+                        or not isinstance(entry.get("fit_review_checklist"), dict)
+                        or not entry["fit_review_checklist"]
+                        or any(value is not True for value in entry["fit_review_checklist"].values())
+                        or not isinstance(checksums, dict)):
+                    raise FileNotFoundError
+                digest = hashlib.sha256(asset_path.read_bytes()).hexdigest()
+                if checksums.get(relative_path) != digest:
+                    raise FileNotFoundError
             asset_file = asset_path.open("rb")
             asset_size = os.fstat(asset_file.fileno()).st_size
         except (FileNotFoundError, OSError, UnicodeError, ValueError):
@@ -217,6 +240,42 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(400, {"error": "Session close request is malformed."})
             self.store.close_session(token)
             return self._json(200, {"closed": True})
+        if path == "/api/appearance":
+            expected_host = f"127.0.0.1:{self.server.server_port}"
+            allowed_hosts = {expected_host, f"localhost:{self.server.server_port}"}
+            allowed_origins = {f"http://127.0.0.1:{self.server.server_port}",
+                               f"http://localhost:{self.server.server_port}"}
+            if self.headers.get("Host", "").lower() not in allowed_hosts:
+                return self._json(403, {"error": "Invalid host"})
+            origin = self.headers.get("Origin")
+            if origin and origin not in allowed_origins:
+                return self._json(403, {"error": "Cross-origin appearance updates are not allowed"})
+            player_id = self.store.player_for_session(self.headers.get("X-Atlas-Session"))
+            if player_id is None:
+                return self._json(401, {"error": "A local traveler session is required."})
+            if urlsplit(self.path).query:
+                return self._json(400, {"error": "Appearance updates do not accept query parameters."})
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                return self._json(400, {"error": "Invalid content length"})
+            if length < 1 or length > 4096:
+                return self._json(413, {"error": "Appearance request is too large or empty"})
+            if self.headers.get_content_type() != "application/json":
+                return self._json(415, {"error": "Expected application/json"})
+            try:
+                content = json.loads(self.rfile.read(length))
+                if not isinstance(content, dict) or set(content) != {"appearance"}:
+                    raise ValueError("Appearance update must contain exactly one appearance profile.")
+                profile = self.store.save_appearance(player_id, content["appearance"])
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                return self._json(400, {"error": "Malformed JSON"})
+            except ValueError as exc:
+                return self._json(422, {"error": str(exc)})
+            except Exception:
+                self.log_error("request failed while saving a character appearance")
+                return self._json(500, {"error": "The character appearance could not be saved."})
+            return self._json(200, {"appearance": profile})
         if path in {"/api/entities", "/api/relationships", "/api/simulations",
                     "/api/policy/evaluations", "/api/decisions"} or path.startswith("/api/decisions/"):
             expected_host = f"127.0.0.1:{self.server.server_port}"

@@ -104,11 +104,13 @@ registered meshes, each independently removable or replaceable. Compatible body
 coverage regions may be hidden when a garment is equipped to prevent clipping.
 Changing appearance never replaces the animated skeleton or animator. The current
 preview exposes skin tone, height, weight, bust, stomach, hips, glutes, thighs,
-and the supplied underwear meshes. Proportion sliders use hand-authored shape
-targets on the body and matching underwear; they are an initial customization
-range, not a scan-based fitting system. Runtime preview changes are visual-only
-and are not yet saved. Hair, face, socks, shoes, and additional clothing choices
-use the same profile-and-slot system as matching assets are added.
+the supplied underwear meshes, and shoulder guards. The `atlas-character-profile/v1`
+schema is defined in `atlas-character-profile-v1.schema.json`; the local server
+validates complete profiles and stores them with each traveler. Proportion
+sliders use hand-authored shape targets on the body and matching underwear; they
+are an initial customization range, not a scan-based fitting system. Hair, face,
+socks, shoes, and additional clothing choices need registered matching assets
+before they can be offered in the profile.
 
 ## Offline authoring pipeline
 

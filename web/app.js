@@ -145,14 +145,14 @@ function makeCharacter(kind) {
   group.userData.nameplate = makeNameplate(label, color, playerCharacter ? 1.78 : 1.82);
   group.add(group.userData.nameplate);
   group.userData.appearance = {
-    heightCm: null,
+    heightCm: 168,
     weightKg: 70,
     bustPercent: 100,
     stomachPercent: 100,
     hipsPercent: 100,
     glutesPercent: 100,
     thighsPercent: 100,
-    skinTone: null,
+    skinTone: '#b17c5e',
     underwearTop: false,
     underwearBottom: false,
   };
@@ -305,6 +305,7 @@ function syncAppearanceControls(character) {
   $('#underwear-top-toggle').checked = Boolean(state.underwearTop);
   $('#underwear-bottom-toggle').disabled = !briefs;
   $('#underwear-bottom-toggle').checked = Boolean(state.underwearBottom);
+  $('#shoulder-guard-toggle').checked = Boolean(state.shoulderGuards);
 }
 
 function setShoulderGuards(character, enabled) {
@@ -362,6 +363,24 @@ function makeNameplate(label,color,y){
 function applyState(state) {
   const oldPlayer=game?.player;
   game=state;
+  if (state.appearance) {
+    const saved = state.appearance;
+    player.userData.appearance = {
+      ...player.userData.appearance,
+      heightCm: saved.height_cm,
+      weightKg: saved.weight_kg,
+      skinTone: saved.skin_tone,
+      bustPercent: saved.bust_percent,
+      stomachPercent: saved.stomach_percent,
+      hipsPercent: saved.hips_percent,
+      glutesPercent: saved.glutes_percent,
+      thighsPercent: saved.thighs_percent,
+      underwearTop: saved.underwear_top,
+      underwearBottom: saved.underwear_bottom,
+      shoulderGuards: saved.shoulder_guards,
+    };
+    player.userData.shoulderGuardsEnabled = saved.shoulder_guards;
+  }
   const groundedAtSurface = traveler => {
     const height = Number(traveler.height) || 0;
     const verticalVelocity = Number(traveler.vertical_velocity) || 0;
@@ -696,6 +715,57 @@ window.addEventListener('keydown',event=>{
 });
 $('#beacon-action').addEventListener('click',()=>act({type:'interact',target:'beacon'}));
 const drawerPanels={satchel:['satchel-content','Inventory'],appearance:['appearance-content','Appearance'],skills:['skills-content','Skills'],magic:['magic-content','Magic'],notes:['notes-content','World memory']};
+let appearanceSaveTimer = null;
+let appearanceSavePending = false;
+let appearanceSaveInFlight = false;
+function queueAppearanceSave() {
+  clearTimeout(appearanceSaveTimer);
+  $('#appearance-save-status').textContent = 'Saving…';
+  appearanceSaveTimer = setTimeout(() => {
+    appearanceSavePending = true;
+    void flushAppearanceSave();
+  }, 350);
+}
+async function flushAppearanceSave() {
+  if (appearanceSaveInFlight || !appearanceSavePending) return;
+  appearanceSavePending = false;
+  appearanceSaveInFlight = true;
+  const state = player.userData.appearance;
+  const appearance = {
+    schema: 'atlas-character-profile/v1',
+    height_cm: Math.round(state.heightCm),
+    weight_kg: Math.round(state.weightKg),
+    skin_tone: state.skinTone,
+    bust_percent: Math.round(state.bustPercent),
+    stomach_percent: Math.round(state.stomachPercent),
+    hips_percent: Math.round(state.hipsPercent),
+    glutes_percent: Math.round(state.glutesPercent),
+    thighs_percent: Math.round(state.thighsPercent),
+    underwear_top: Boolean(state.underwearTop),
+    underwear_bottom: Boolean(state.underwearBottom),
+    shoulder_guards: Boolean(state.shoulderGuards),
+  };
+  try {
+    const response = await authenticatedFetch('/api/appearance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ appearance }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Save failed (${response.status})`);
+    $('#appearance-save-status').textContent = 'Appearance saved';
+  } catch (error) {
+    $('#appearance-save-status').textContent = 'Save failed · try changing a control again';
+    console.error('Character appearance save failed:', error);
+  } finally {
+    appearanceSaveInFlight = false;
+    if (appearanceSavePending) void flushAppearanceSave();
+  }
+}
+function updateAppearance(patch) {
+  applyCharacterAppearance(player, patch);
+  queueAppearanceSave();
+}
 function openDrawer(section){
   const drawer=$('#memory-drawer'),opening=drawer.hidden||drawer.dataset.section!==section;
   drawer.dataset.section=section;drawer.hidden=!opening;
@@ -711,25 +781,27 @@ const appearanceWeight=$('#appearance-weight');
 appearanceHeight.addEventListener('input',event=>{
   const heightCm=Number(event.currentTarget.value);
   $('#appearance-height-value').textContent=`${heightCm} cm`;
-  applyCharacterAppearance(player,{heightCm});
+  updateAppearance({heightCm});
 });
 appearanceWeight.addEventListener('input',event=>{
   const weightKg=Number(event.currentTarget.value);
   $('#appearance-weight-value').textContent=`${weightKg} kg`;
-  applyCharacterAppearance(player,{weightKg});
+  updateAppearance({weightKg});
 });
 for (const [id, stateKey] of [['bust','bustPercent'],['stomach','stomachPercent'],['hips','hipsPercent'],['glutes','glutesPercent'],['thighs','thighsPercent']]) {
   $(`#appearance-${id}`).addEventListener('input', event => {
     const value = Number(event.currentTarget.value);
     $(`#appearance-${id}-value`).textContent = `${value}%`;
-    applyCharacterAppearance(player, { [stateKey]: value });
+    updateAppearance({ [stateKey]: value });
   });
 }
-$('#appearance-skin').addEventListener('input',event=>applyCharacterAppearance(player,{skinTone:event.currentTarget.value}));
-$('#underwear-top-toggle').addEventListener('change',event=>applyCharacterAppearance(player,{underwearTop:event.currentTarget.checked}));
-$('#underwear-bottom-toggle').addEventListener('change',event=>applyCharacterAppearance(player,{underwearBottom:event.currentTarget.checked}));
+$('#appearance-skin').addEventListener('input',event=>updateAppearance({skinTone:event.currentTarget.value}));
+$('#underwear-top-toggle').addEventListener('change',event=>updateAppearance({underwearTop:event.currentTarget.checked}));
+$('#underwear-bottom-toggle').addEventListener('change',event=>updateAppearance({underwearBottom:event.currentTarget.checked}));
 $('#shoulder-guard-toggle').addEventListener('change',event=>{
   setShoulderGuards(player,event.currentTarget.checked);
+  player.userData.appearance.shoulderGuards = event.currentTarget.checked;
+  queueAppearanceSave();
   showToast(event.currentTarget.checked?'Shoulder guards equipped':'Shoulder guards removed');
 });
 $('#memory-toggle').addEventListener('click',()=>openDrawer('notes'));

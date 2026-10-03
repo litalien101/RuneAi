@@ -1,0 +1,179 @@
+{
+  "schema": "atlas-character-reference-comparison/v1",
+  "character_id": "stone_troll",
+  "reference_calibration": "art/characters/reference_calibrations/troll_sketchfab.json",
+  "reference_source_sha256": "55202c278dbf55637a084e1dc2608266619272f2e257da240adfe9d33b54eb4e",
+  "generated_preview_sha256": "89160a806d9e224bc11ca02f913e16daecfcf6f7188d15d23b76c8581f91f46a",
+  "generated_profile_sha256": "5c4ca6b3c806347d0fe6c4afce496e4b0a7e8559447828c22753600363e020ab",
+  "generator_version": "atlas-character-base/v9",
+  "whole_mesh": {
+    "width_over_height_delta": 0.473146,
+    "depth_over_height_delta": 0.0,
+    "caveat": "Whole-mesh extents include the source character's posed arms, ears, and protrusions."
+  },
+  "normalized_landmarks": {
+    "pelvis": {
+      "generated_height_percent": 40.939,
+      "reference_height_percent": 40.939,
+      "delta_percentage_points": -0.0
+    },
+    "left_knee": {
+      "generated_height_percent": 21.802,
+      "reference_height_percent": 21.802,
+      "delta_percentage_points": -0.0
+    },
+    "left_ankle": {
+      "generated_height_percent": 6.523,
+      "reference_height_percent": 6.523,
+      "delta_percentage_points": -0.0
+    },
+    "left_shoulder": {
+      "generated_height_percent": 78.564,
+      "reference_height_percent": 78.564,
+      "delta_percentage_points": 0.0
+    },
+    "head": {
+      "generated_height_percent": 86.532,
+      "reference_height_percent": 86.532,
+      "delta_percentage_points": 0.0
+    },
+    "left_eye": {
+      "generated_height_percent": 92.126,
+      "reference_height_percent": 91.647,
+      "delta_percentage_points": 0.479
+    }
+  },
+  "cross_section_deltas": [
+    {
+      "height_percent": 5,
+      "x_extent_delta_over_height": 0.0,
+      "y_extent_delta_over_height": 0.0,
+      "source_sample_vertices": 46,
+      "generated_sample_vertices": 46
+    },
+    {
+      "height_percent": 10,
+      "x_extent_delta_over_height": 0.0,
+      "y_extent_delta_over_height": 0.0,
+      "source_sample_vertices": 19,
+      "generated_sample_vertices": 19
+    },
+    {
+      "height_percent": 20,
+      "x_extent_delta_over_height": -0.156407,
+      "y_extent_delta_over_height": 0.001238,
+      "source_sample_vertices": 43,
+      "generated_sample_vertices": 19
+    },
+    {
+      "height_percent": 25,
+      "x_extent_delta_over_height": -0.233359,
+      "y_extent_delta_over_height": 0.010763,
+      "source_sample_vertices": 89,
+      "generated_sample_vertices": 14
+    },
+    {
+      "height_percent": 30,
+      "x_extent_delta_over_height": -0.485688,
+      "y_extent_delta_over_height": 0.039936,
+      "source_sample_vertices": 36,
+      "generated_sample_vertices": 11
+    },
+    {
+      "height_percent": 35,
+      "x_extent_delta_over_height": -0.257401,
+      "y_extent_delta_over_height": -0.044277,
+      "source_sample_vertices": 63,
+      "generated_sample_vertices": 25
+    },
+    {
+      "height_percent": 40,
+      "x_extent_delta_over_height": 0.43672,
+      "y_extent_delta_over_height": -0.067432,
+      "source_sample_vertices": 22,
+      "generated_sample_vertices": 90
+    },
+    {
+      "height_percent": 45,
+      "x_extent_delta_over_height": 0.439656,
+      "y_extent_delta_over_height": -0.15056,
+      "source_sample_vertices": 14,
+      "generated_sample_vertices": 82
+    },
+    {
+      "height_percent": 50,
+      "x_extent_delta_over_height": 0.540404,
+      "y_extent_delta_over_height": 0.117702,
+      "source_sample_vertices": 15,
+      "generated_sample_vertices": 36
+    },
+    {
+      "height_percent": 55,
+      "x_extent_delta_over_height": 0.40481,
+      "y_extent_delta_over_height": -0.012651,
+      "source_sample_vertices": 20,
+      "generated_sample_vertices": 28
+    },
+    {
+      "height_percent": 60,
+      "x_extent_delta_over_height": 0.380679,
+      "y_extent_delta_over_height": -0.097186,
+      "source_sample_vertices": 21,
+      "generated_sample_vertices": 12
+    },
+    {
+      "height_percent": 65,
+      "x_extent_delta_over_height": 0.228125,
+      "y_extent_delta_over_height": -0.033399,
+      "source_sample_vertices": 42,
+      "generated_sample_vertices": 26
+    },
+    {
+      "height_percent": 70,
+      "x_extent_delta_over_height": 0.222798,
+      "y_extent_delta_over_height": -0.030931,
+      "source_sample_vertices": 22,
+      "generated_sample_vertices": 80
+    },
+    {
+      "height_percent": 75,
+      "x_extent_delta_over_height": 0.253773,
+      "y_extent_delta_over_height": -0.000104,
+      "source_sample_vertices": 23,
+      "generated_sample_vertices": 56
+    },
+    {
+      "height_percent": 80,
+      "x_extent_delta_over_height": 0.126898,
+      "y_extent_delta_over_height": 0.0,
+      "source_sample_vertices": 36,
+      "generated_sample_vertices": 45
+    },
+    {
+      "height_percent": 85,
+      "x_extent_delta_over_height": 0.090952,
+      "y_extent_delta_over_height": 0.0,
+      "source_sample_vertices": 184,
+      "generated_sample_vertices": 190
+    },
+    {
+      "height_percent": 90,
+      "x_extent_delta_over_height": 0.014669,
+      "y_extent_delta_over_height": 4e-06,
+      "source_sample_vertices": 249,
+      "generated_sample_vertices": 251
+    },
+    {
+      "height_percent": 95,
+      "x_extent_delta_over_height": 0.0,
+      "y_extent_delta_over_height": 0.0,
+      "source_sample_vertices": 21,
+      "generated_sample_vertices": 21
+    }
+  ],
+  "review_guidance": [
+    "Landmark ratios describe this source rig's rest-pose bone heads and are comparison guides, not automatic rig targets.",
+    "Cross-sections include whatever geometry intersects each horizontal slice; inspect sample counts and use a visual review before changing recipe controls.",
+    "The comparison is diagnostic. It does not imply source geometry, materials, rigging, or animation were copied."
+  ]
+}
